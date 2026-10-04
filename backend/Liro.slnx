@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Liro.Api/Liro.Api.csproj" Id="e739ce22-a7c6-495d-800f-bb5addbf2624" />
+    <Project Path="src/Liro.AppHost/Liro.AppHost.csproj" Id="1a830422-7c43-42e4-9a1e-05b5b22825cb" />
+    <Project Path="src/Liro.Application/Liro.Application.csproj" Id="973d2200-e822-4c01-8119-2dbaebfece76" />
+    <Project Path="src/Liro.Domain/Liro.Domain.csproj" Id="bb5f2384-d8df-4249-b101-3f854793a6fd" />
+    <Project Path="src/Liro.Infrastructure/Liro.Infrastructure.csproj" Id="44cc9f25-56c5-462c-86ea-7fef510501be" />
+    <Project Path="src/Liro.ServiceDefaults/Liro.ServiceDefaults.csproj" />
+    <Project Path="src/Liro.Workers/Liro.Workers.csproj" Id="60200400-3d45-4cad-b167-c6d3c0b7a8f2" />
+  </Folder>
+</Solution>

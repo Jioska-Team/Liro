@@ -1,0 +1,19 @@
+<main>
+  <h1>Liro</h1>
+
+  @if (loading()) {
+    <p>Conectando con Liro...</p>
+  } @else {
+    <p>
+      Backend:
+      <strong>{{ backendConnected() ? 'Connected' : 'Disconnected' }}</strong>
+    </p>
+
+    <p>PostgreSQL: {{ postgres() }}</p>
+    <p>Valkey: {{ valkey() }}</p>
+
+    @if (latency() !== null) {
+      <p>Valkey latency: {{ latency() }} ms</p>
+    }
+  }
+</main>
