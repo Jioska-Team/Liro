@@ -1,2 +1,0 @@
-# Liro
-Trading Limit Roblox
