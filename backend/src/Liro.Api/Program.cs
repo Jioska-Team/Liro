@@ -1,28 +1,21 @@
+using Liro.Api;
 using Liro.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Add services to the container.
-
-builder.Services.AddControllers();
-builder.Services.AddOpenApi();
-
+builder.Services.AddLiroApi(builder.Configuration);
 builder.AddServiceDefaults();
 builder.AddInfrastructure();
-
 var app = builder.Build();
-
-// Configure the HTTP request pipeline.
+app.UseExceptionHandler();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
-
+app.UseAuthentication();
 app.UseAuthorization();
-
+app.UseRateLimiter();
 app.MapControllers();
 app.MapDefaultEndpoints();
-
-app.Run();
+await app.RunAsync();

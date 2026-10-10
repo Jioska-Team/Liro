@@ -8,4 +8,8 @@
     <Project Path="src/Liro.ServiceDefaults/Liro.ServiceDefaults.csproj" />
     <Project Path="src/Liro.Workers/Liro.Workers.csproj" Id="60200400-3d45-4cad-b167-c6d3c0b7a8f2" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Liro.AppHost.RegressionTests/Liro.AppHost.RegressionTests.csproj" />
+    <Project Path="tests/Liro.RegressionTests/Liro.RegressionTests.csproj" />
+  </Folder>
 </Solution>
