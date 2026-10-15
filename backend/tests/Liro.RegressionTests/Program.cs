@@ -8,4 +8,6 @@ RobloxTests.Register(suite);
 PersistenceTests.Register(suite);
 WorkerTests.Register(suite);
 ApiTests.Register(suite);
+LanAccessTests.Register(suite);
+LanReadinessTests.Register(suite);
 return await suite.RunAsync();

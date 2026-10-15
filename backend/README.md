@@ -1,5 +1,10 @@
 # Desarrollo y operación del backend Liro
 
+## Documentacion para frontend
+
+Guia de endpoints, respuestas, modelos TypeScript y coleccion de Postman:
+[API para frontend](docs/frontend/README.md). No requiere Docker en el equipo del consumidor.
+
 ## Verificación
 
 Desde backend: `./verify.ps1`.

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Liro.DevelopmentAgent/Liro.DevelopmentAgent.csproj" />
     <Project Path="src/Liro.Api/Liro.Api.csproj" Id="e739ce22-a7c6-495d-800f-bb5addbf2624" />
     <Project Path="src/Liro.AppHost/Liro.AppHost.csproj" Id="1a830422-7c43-42e4-9a1e-05b5b22825cb" />
     <Project Path="src/Liro.Application/Liro.Application.csproj" Id="973d2200-e822-4c01-8119-2dbaebfece76" />
@@ -9,6 +10,7 @@
     <Project Path="src/Liro.Workers/Liro.Workers.csproj" Id="60200400-3d45-4cad-b167-c6d3c0b7a8f2" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Liro.DevelopmentAgent.RegressionTests/Liro.DevelopmentAgent.RegressionTests.csproj" />
     <Project Path="tests/Liro.AppHost.RegressionTests/Liro.AppHost.RegressionTests.csproj" />
     <Project Path="tests/Liro.RegressionTests/Liro.RegressionTests.csproj" />
   </Folder>

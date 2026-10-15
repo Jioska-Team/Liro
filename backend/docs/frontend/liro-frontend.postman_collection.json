@@ -1,0 +1,107 @@
+{
+  "info": {
+    "name": "Liro - Frontend LAN",
+    "description": "Consultas de lectura. Define baseUrl con la URL entregada por Discord (sin barra final). itemId es UUID Liro, assetId es numerico Roblox. No configurar autenticacion.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assetId",
+      "value": "12803855954",
+      "type": "string"
+    },
+    {
+      "key": "itemId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "before",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Disponibilidad API",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/lan/ready",
+        "description": "200 ready o 503 unavailable."
+      }
+    },
+    {
+      "name": "Item por ID Roblox",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/items/by-asset/{{assetId}}",
+        "description": "200 ItemResponse; 404 si no esta importado. Copia id al valor itemId para consultar historial."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const item = pm.response.json();",
+              "  if (typeof item.id === 'string') pm.collectionVariables.set('itemId', item.id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Item por UUID Liro",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/items/{{itemId}}",
+        "description": "Usar el id interno devuelto por la consulta anterior."
+      }
+    },
+    {
+      "name": "Historial - primera pagina",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/items/{{itemId}}/market-history?limit=100",
+        "description": "Array ItemMarketResponse[], mas reciente primero."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  const page = pm.response.json();",
+              "  if (Array.isArray(page) && page.length) pm.collectionVariables.set('before', page[page.length - 1].observedAtUtc);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Historial - pagina anterior",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/v1/items/{{itemId}}/market-history?limit=100&before={{before}}",
+        "description": "before exclusivo. Cambiarlo por observedAtUtc del ultimo elemento de cada pagina; detenerse cuando el array este vacio."
+      }
+    }
+  ]
+}

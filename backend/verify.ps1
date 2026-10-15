@@ -9,6 +9,9 @@ try {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     dotnet run --project tests/Liro.AppHost.RegressionTests --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    dotnet run --project tests/Liro.DevelopmentAgent.RegressionTests --no-build --no-restore
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & (Join-Path $PSScriptRoot 'tests/Liro.DevelopmentAgent.RegressionTests/Scripts.Tests.ps1')
 }
 finally {
     Pop-Location
