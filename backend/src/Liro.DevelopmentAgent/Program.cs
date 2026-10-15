@@ -14,14 +14,23 @@ var log = new LocalAgentLog(directory);
 try
 {
     if (!OperatingSystem.IsWindows()) { throw new InvalidOperationException("Se requiere Windows."); }
-    if (args.Length != 1 || args[0] is not ("configure" or "install-panel" or "run"))
+    if (args.Length != 1 || args[0] is not ("configure" or "configure-owner" or "install-panel" or "run"))
     {
-        Console.WriteLine("Uso: Liro.DevelopmentAgent configure | install-panel | run");
+        Console.WriteLine("Uso: Liro.DevelopmentAgent configure | configure-owner | install-panel | run");
         return 2;
     }
     using var instance = new AgentInstance(directory);
     if (args[0] == "configure") { await InteractiveSetup.ConfigureAsync(directory); return 0; }
     var options = AgentOptions.Load(directory);
+    if (args[0] == "configure-owner")
+    {
+        Console.Write("Tu ID de usuario Discord (0 para desactivar acceso al panel): ");
+        if (!ulong.TryParse(Console.ReadLine()?.Trim(), out var ownerId)) { throw new SetupFailure("ID de usuario invalido."); }
+        options.OwnerUserId = ownerId;
+        options.Save(directory);
+        Console.WriteLine("Propietario guardado localmente. Ejecuta InstallPanel para actualizar los botones.");
+        return 0;
+    }
     var credentials = new LocalCredentialStore(directory);
     if (args[0] == "install-panel")
     {
@@ -51,6 +60,8 @@ try
     builder.Services.AddSingleton<IReadinessProbe, LiroReadinessProbe>();
     builder.Services.AddSingleton<IStartupCoordinator, StartupCoordinator>();
     builder.Services.AddSingleton<InteractionHandler>();
+    builder.Services.AddSingleton<IDashboardLoginProvider, DashboardLoginProvider>();
+    builder.Services.AddSingleton<DashboardInteractionHandler>();
     builder.Services.AddSingleton<DiscordAgentService>();
     builder.Services.AddHostedService(provider => provider.GetRequiredService<DiscordAgentService>());
     using var host = builder.Build();
@@ -66,5 +77,6 @@ catch (Exception exception)
     Console.Error.WriteLine(SafeDiagnostic.Describe(exception));
     return 1;
 }
+
 
 

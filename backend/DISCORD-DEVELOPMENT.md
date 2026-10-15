@@ -99,3 +99,30 @@ ejecutar Install y Run y volver a registrar el inicio si se desea.
 Para rotar token, restablecerlo en el portal Discord y ejecutar Configure con el
 agente detenido. Reinstalar el panel explicitamente despues de reconfigurar.
 No copiar token.dpapi a otros usuarios: DPAPI lo vincula al usuario Windows.
+
+## Panel Aspire del propietario
+
+El boton `Mi panel Aspire` solo acepta el usuario configurado en `OwnerUserId`,
+ademas del servidor, canal y mensaje esperados. No usa el rol de frontend como
+permiso para entregar el token. Las respuestas de ambos botones son privadas
+(ephemeral); el mensaje compartido conserva sus botones y no recibe el token.
+
+Actualizar con el agente detenido (`Uninstall` conserva configuracion y no detiene
+Liro ni Docker), ejecutar `Install`, `ConfigureOwner`, `InstallPanel` y `Run`.
+`ConfigureOwner` pide el ID de usuario Discord y lo guarda fuera del repositorio;
+0 desactiva el acceso. No cambia el token del bot. Ejecutar `InstallPanel` actualiza
+los botones del mensaje existente. Una reconfiguracion completa con `Configure`
+restablece esta opcion; configurar otra vez el propietario si se necesita.
+
+El boton consulta `aspire ps --format Json` de la cuenta Windows y selecciona solo
+el AppHost de BackendPath, activo, con una unica URL de login HTTPS en loopback.
+No conserva tokens anteriores ni lee logs de Aspire. Si CLI no encuentra la sesion,
+no entrega un token. El enlace contiene el token de Aspire, no el token del bot.
+Abrirlo desde la PC anfitriona; localhost desde otra PC apunta a esa otra PC.
+No se abre el dashboard a la LAN ni se desactiva su autenticacion.
+
+Para ver el panel no hace falta arrancar Visual Studio. Si Liro ya fue iniciado
+por el agente, iniciar otro AppHost puede causar conflictos de puertos. Para
+inspeccionar codigo del proceso existente se puede adjuntar el depurador al proceso
+correspondiente; para iniciar desde Visual Studio hay que detener antes la instancia
+existente. El boton del panel no detiene ni reinicia servicios.

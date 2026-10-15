@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Install','Configure','InstallPanel','Run','RegisterStartup','UnregisterStartup','Uninstall')]
+    [ValidateSet('Install','Configure','ConfigureOwner','InstallPanel','Run','RegisterStartup','UnregisterStartup','Uninstall')]
     [string]$Action = 'Install'
 )
 $ErrorActionPreference = 'Stop'
@@ -30,6 +30,7 @@ if ($Action -in @('UnregisterStartup','Uninstall')) {
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'Ejecuta primero la accion Install.' }
 switch ($Action) {
     'Configure' { & $executable configure; if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar el agente.' } }
+    'ConfigureOwner' { & $executable configure-owner; if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar el propietario.' } }
     'InstallPanel' { & $executable install-panel; if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar el panel.' } }
     'Run' { Start-Process -FilePath $executable -ArgumentList 'run' -WindowStyle Hidden | Out-Null }
     'RegisterStartup' {
@@ -42,3 +43,4 @@ switch ($Action) {
         Write-Host 'Inicio al iniciar sesion configurado para el usuario actual, sin elevar privilegios.'
     }
 }
+

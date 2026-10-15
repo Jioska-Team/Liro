@@ -8,7 +8,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Liro.DevelopmentAgent.Discord;
 
-public sealed class DiscordAgentService(AgentOptions options, LocalCredentialStore credentials, InteractionHandler handler, LocalAgentLog log) : BackgroundService
+public sealed class DiscordAgentService(AgentOptions options, LocalCredentialStore credentials, InteractionHandler handler, LocalAgentLog log, DashboardInteractionHandler dashboard) : BackgroundService
 {
     private readonly DiscordSocketClient client = new(new DiscordSocketConfig { GatewayIntents = GatewayIntents.Guilds, LogLevel = LogSeverity.Critical });
     private readonly ConcurrentDictionary<Guid, Task> pending = new();
@@ -52,10 +52,13 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
                 component.User is SocketGuildUser user ? user.Roles.Select(role => role.Id).ToArray() : []);
             var reply = new DiscordReply(component);
             if (pending.Count >= 64) { await reply.DenyAsync(); return; }
-            if (!await handler.AcknowledgeAsync(request, reply)) { return; }
+            var ownerRequest = request.CustomId == DashboardInteractionHandler.ButtonId;
+            if (!ownerRequest && !await handler.AcknowledgeAsync(request, reply)) { return; }
             // Return to the gateway after deferral; startup must not block heartbeat processing.
             var key = Guid.NewGuid();
-            var task = Task.Run(() => handler.CompleteAsync(reply, stopping));
+            var task = ownerRequest
+                ? dashboard.HandleAsync(request, component.User.Id, reply, stopping)
+                : Task.Run(() => handler.CompleteAsync(reply, stopping));
             pending[key] = task;
             _ = RemoveWhenCompletedAsync(key, task);
         }
@@ -70,7 +73,12 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
 
     private sealed class DiscordReply(SocketMessageComponent component) : IButtonReply
     {
-        public Task DeferAsync() => component.DeferAsync(ephemeral: true);
+        public async Task DeferAsync()
+        {
+            // Component DeferAsync can acknowledge an update to the shared panel.
+            // An explicit private response ensures subsequent edits target only this reply.
+            await component.RespondAsync("Consultando...", ephemeral: true, allowedMentions: AllowedMentions.None);
+        }
         public Task DenyAsync() => component.RespondAsync("Acceso no autorizado o agente ocupado.", ephemeral: true, allowedMentions: AllowedMentions.None);
         public async Task CompleteAsync(string message)
         {
@@ -82,3 +90,4 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
         }
     }
 }
+
