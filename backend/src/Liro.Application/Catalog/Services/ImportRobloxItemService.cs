@@ -29,6 +29,24 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
             throw new JsonException("Roblox returned a different asset ID.");
         }
 
+        var details = remote.Details;
+        var knownOtherCreator = (details?.CreatorId is > 0 and not 1)
+            || string.Equals(details?.CreatorType, "Group", StringComparison.OrdinalIgnoreCase);
+        if (knownOtherCreator)
+        {
+            if (existing is not null)
+            {
+                await itemRepository.DeleteByAssetIdAsync(assetId, cancellationToken);
+            }
+            await failures.ResolveAsync(assetId, cancellationToken);
+            logger.LogInformation("Excluded asset {AssetId}: creator is not the official Roblox user.", assetId);
+            return null;
+        }
+        if (details?.CreatorId != 1 || !string.Equals(details.CreatorType, "User", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new JsonException("Catalog creator identity is missing; cannot confirm the official Roblox user.");
+        }
+
         var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus);
         if (existing is not null)
         {

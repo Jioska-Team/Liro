@@ -27,8 +27,4 @@ public sealed record ItemCatalogDetails
     {
         get; init;
     }
-    public DateTime? UpdatedAtUtc
-    {
-        get; init;
-    }
 }

@@ -27,6 +27,10 @@ public sealed class DatabaseInitializationService(IServiceScopeFactory scopes, I
                     throw new InvalidOperationException("Database migrations are pending. Apply the backend migrations before starting services.");
                 }
 
+                var foreignItems = db.Items.Where(item => (item.CreatorId > 0 && item.CreatorId != 1)
+                    || (item.CreatorType != null && item.CreatorType.ToLower() == "group"));
+                var deleted = await CatalogItemDeletion.DeleteAsync(db, foreignItems, cancellationToken);
+                logger.LogInformation("Removed {Count} items with a confirmed non-Roblox creator and their market records.", deleted);
                 var policy = scope.ServiceProvider.GetRequiredService<CatalogRefreshPolicy>();
                 var interval = policy.Interval;
                 var rescheduled = await db.Items

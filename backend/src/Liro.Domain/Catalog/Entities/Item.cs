@@ -172,26 +172,32 @@ public sealed class Item : IHasDomainEvents
         ArgumentNullException.ThrowIfNull(details);
         if (details.CreatorId <= 0 || details.AssetTypeId <= 0
             || details.CreatedAtUtc is { Kind: not DateTimeKind.Utc }
-            || details.UpdatedAtUtc is { Kind: not DateTimeKind.Utc }
             || details.Restrictions.Any(string.IsNullOrWhiteSpace))
         {
             throw new ArgumentException("Invalid catalog metadata.", nameof(details));
+        }
+
+        var createdAtUtc = RobloxCreatedAtUtc ?? details.CreatedAtUtc;
+        var updatedAtUtc = RobloxUpdatedAtUtc ?? createdAtUtc;
+        if (details.CreatedAtUtc is { } incomingDate && incomingDate > createdAtUtc && incomingDate > updatedAtUtc)
+        {
+            updatedAtUtc = incomingDate;
         }
 
         var restrictions = details.Restrictions.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         var changed = Description != details.Description || CreatorId != details.CreatorId
             || CreatorType != details.CreatorType || CreatorName != details.CreatorName
             || AssetTypeId != details.AssetTypeId || !Restrictions.SequenceEqual(restrictions)
-            || RobloxCreatedAtUtc != details.CreatedAtUtc
-            || (details.UpdatedAtUtc.HasValue && RobloxUpdatedAtUtc != details.UpdatedAtUtc);
+            || RobloxCreatedAtUtc != createdAtUtc
+            || RobloxUpdatedAtUtc != updatedAtUtc;
         Description = details.Description;
         CreatorId = details.CreatorId;
         CreatorType = details.CreatorType;
         CreatorName = details.CreatorName;
         AssetTypeId = details.AssetTypeId;
         Restrictions = restrictions;
-        RobloxCreatedAtUtc = details.CreatedAtUtc;
-        RobloxUpdatedAtUtc = details.UpdatedAtUtc ?? RobloxUpdatedAtUtc;
+        RobloxCreatedAtUtc = createdAtUtc;
+        RobloxUpdatedAtUtc = updatedAtUtc;
         if (changed)
         {
             LastUpdatedAt = DateTime.UtcNow;

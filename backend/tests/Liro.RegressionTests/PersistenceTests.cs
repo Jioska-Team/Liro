@@ -9,6 +9,23 @@ internal static class PersistenceTests
 {
     public static void Register(RegressionSuite suite)
     {
+        foreach (var mode in new[] { "empty", "items", "retry" })
+        {
+            suite.AsyncTest($"Catalog deletion with Npgsql retries enabled mode={mode}", async () =>
+            {
+                var probe = new DeletionDatabaseProbe { WithItems = mode != "empty", FailOnce = mode == "retry" };
+                var options = new DbContextOptionsBuilder<Liro.Infrastructure.Persistence.LiroDbContext>()
+                    .UseNpgsql("Host=localhost;Database=unused;Username=unused;Password=unused", npgsql => npgsql.EnableRetryOnFailure(2, TimeSpan.Zero, null))
+                    .AddInterceptors(new DeletionConnectionProbe(), new DeletionTransactionProbe(probe), new DeletionCommandProbe(probe)).Options;
+                using var db = new Liro.Infrastructure.Persistence.LiroDbContext(options);
+                var repository = new Liro.Infrastructure.Persistence.Repositories.ItemRepository(db);
+                await repository.DeleteByAssetIdAsync(1);
+                Check.That(probe.Committed && probe.Disposed, "Transaction did not commit and dispose");
+                Check.That(probe.Queries == (mode == "retry" ? 2 : 1), "Retry did not restart the whole transaction");
+                Check.That(probe.DeleteCalls == (mode == "empty" ? 0 : mode == "retry" ? 6 : 4), "Unexpected delete operation count");
+                Check.That(db.Database.CurrentTransaction is null, "Completed deletion retained a transaction");
+            });
+        }
         suite.Test("Outbox retries are scheduled and eventually quarantined", () =>
         {
             var message = new Liro.Infrastructure.Persistence.Outbox.OutboxMessage();
@@ -76,5 +93,74 @@ internal static class PersistenceTests
             var item = db.Model.FindEntityType(typeof(Item))!;
             Check.That(item.FindProperty(nameof(Item.Version))!.IsConcurrencyToken, "Item concurrency protection is missing");
         });
+    }
+}
+
+sealed class DeletionDatabaseProbe
+{
+    public bool WithItems;
+    public bool FailOnce;
+    public int Queries;
+    public int DeleteCalls;
+    public bool Committed;
+    public bool Disposed;
+}
+
+sealed class DeletionConnectionProbe : Microsoft.EntityFrameworkCore.Diagnostics.DbConnectionInterceptor
+{
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult> ConnectionOpeningAsync(System.Data.Common.DbConnection connection, Microsoft.EntityFrameworkCore.Diagnostics.ConnectionEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult result, CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult.Suppress());
+    }
+}
+
+sealed class DeletionTransactionProbe(DeletionDatabaseProbe probe) : Microsoft.EntityFrameworkCore.Diagnostics.DbTransactionInterceptor
+{
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbTransaction>> TransactionStartingAsync(System.Data.Common.DbConnection connection, Microsoft.EntityFrameworkCore.Diagnostics.TransactionStartingEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbTransaction> result, CancellationToken cancellationToken = default)
+    {
+        var transaction = new DeletionFakeTransaction(connection, probe);
+        return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbTransaction>.SuppressWithResult(transaction));
+    }
+}
+
+sealed class DeletionFakeTransaction(System.Data.Common.DbConnection connection, DeletionDatabaseProbe probe) : System.Data.Common.DbTransaction
+{
+    protected override System.Data.Common.DbConnection DbConnection => connection;
+    public override System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.RepeatableRead;
+    public override void Commit()
+    {
+        probe.Committed = true;
+    }
+    public override void Rollback()
+    {
+    }
+    protected override void Dispose(bool disposing)
+    {
+        probe.Disposed = true;
+        base.Dispose(disposing);
+    }
+}
+
+sealed class DeletionCommandProbe(DeletionDatabaseProbe probe) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+{
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken cancellationToken = default)
+    {
+        probe.Queries++;
+        var table = new System.Data.DataTable();
+        table.Columns.Add("Id", typeof(Guid));
+        table.Columns.Add("RobloxAssetId", typeof(long));
+        if (probe.WithItems)
+            table.Rows.Add(Guid.Parse("11111111-1111-1111-1111-111111111111"), 1L);
+        System.Data.Common.DbDataReader reader = table.CreateDataReader();
+        return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>.SuppressWithResult(reader));
+    }
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(System.Data.Common.DbCommand command, Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken cancellationToken = default)
+    {
+        probe.DeleteCalls++;
+        if (probe.FailOnce && probe.DeleteCalls == 2)
+        {
+            throw new Npgsql.NpgsqlException("Simulated transient delete failure", new TimeoutException());
+        }
+        return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>.SuppressWithResult(1));
     }
 }

@@ -7,5 +7,5 @@ namespace Liro.RegressionTests;
 
 sealed class PoisonCatalog : IRobloxCatalogClient
 {
-    public Task<RobloxCatalogItem?> GetItemAsync(long id, CancellationToken ct = default) => id == 1 ? throw new JsonException("permanently malformed") : Task.FromResult<RobloxCatalogItem?>(new(id, "Item", null, ItemMarketStatus.Normal));
+    public Task<RobloxCatalogItem?> GetItemAsync(long id, CancellationToken ct = default) => id == 1 ? throw new JsonException("permanently malformed") : Task.FromResult<RobloxCatalogItem?>(new(id, "Item", null, ItemMarketStatus.Normal) { Details = new() { CreatorId = 1, CreatorType = "User" } });
 }

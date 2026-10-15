@@ -260,3 +260,21 @@ se adelantan al intervalo configurado mediante una actualización LINQ en Postgr
 Se excluyen los objetos con fallos registrados y otras fechas de aplazamiento. La
 operación es idempotente y no elimina objetos ni cambia sus datos de mercado.
 No se reinterpretan campos NULL como motivo para reintentar continuamente.
+
+## Identidad oficial y fechas observadas
+
+Solo se importan objetos cuyo detalle confirme `creatorTargetId = 1` y `creatorType = User`.
+El nombre visible no acredita al creador. Los detalles sin identidad suficiente fallan
+para permitir un reintento, sin borrar datos existentes. Un creador ajeno confirmado
+se excluye y, si ya estaba almacenado, se elimina junto con su estado de mercado,
+snapshots y fallos. Al arrancar también se limpian los registros ajenos ya identificados,
+en una transacción; los creadores desconocidos se conservan hasta poder verificarlos.
+Los mensajes de outbox se conservan como registro de eventos anteriores.
+
+`RobloxCreatedAtUtc` conserva el primer `itemCreatedUtc` recibido.
+`RobloxUpdatedAtUtc` empieza con esa misma fecha y solo avanza si llega un
+`itemCreatedUtc` posterior a la creación guardada y a la última fecha observada.
+Una fecha ausente, igual o anterior no borra ni hace retroceder las fechas guardadas.
+En objetos antiguos, la actualización inicialmente nula se completa desde la creación
+conservada durante su siguiente importación exitosa. No representa un campo de
+modificación independiente publicado por Roblox ni la hora de consulta de Liro.

@@ -20,6 +20,99 @@ internal static class MarketTests
 
     public static void Register(RegressionSuite suite)
     {
+        foreach (var creator in new[] { (Id: 99L, Type: "User"), (Id: 1L, Type: "Group") })
+        {
+            foreach (var existing in new[] { false, true })
+            {
+                suite.AsyncTest($"Import excludes foreign creator {creator.Type}-{creator.Id} existing={existing}", async () =>
+                {
+                    var repository = new MemoryRepository(new Item(existing ? 1 : 2, "Existing"));
+                    using var http = CreateHttp(JsonSerializer.Serialize(new
+                    {
+                        data = new[] { new { id = 1, itemType = "Asset", name = "Item", itemRestrictions = Array.Empty<string>(), creatorTargetId = creator.Id, creatorType = creator.Type, creatorName = "Roblox" } }
+                    }));
+                    var importer = new ImportRobloxItemService(new RobloxCatalogClient(http), repository, new PendingThumbnail(), NullLogger<ImportRobloxItemService>.Instance, new MemoryFailureStore(), new CatalogRefreshPolicy());
+                    var result = await importer.ImportAsync(1);
+                    Check.That(result is null && repository.Saves == 0, "Foreign item was imported based on its display name");
+                    Check.That(repository.DeletedAssetIds.SequenceEqual(existing ? new long[] { 1 } : Array.Empty<long>()), "Deletion did not match the existing foreign asset");
+                });
+            }
+        }
+        suite.AsyncTest("Import preserves existing item when creator identity is missing", async () =>
+        {
+            var repository = new MemoryRepository(Fixtures.Item());
+            using var http = CreateHttp("""{"data":[{"id":1,"name":"Item","itemType":"Asset","itemRestrictions":[]}]}""");
+            var importer = new ImportRobloxItemService(new RobloxCatalogClient(http), repository, new PendingThumbnail(), NullLogger<ImportRobloxItemService>.Instance, new MemoryFailureStore(), new CatalogRefreshPolicy());
+            await Check.ThrowsAsync<JsonException>(() => importer.ImportAsync(1));
+            Check.That(repository.Saves == 0 && repository.DeletedAssetIds.Count == 0, "Unknown identity caused a write or deletion");
+        });
+        suite.AsyncTest("Official import compares remote dates on subsequent refresh", async () =>
+        {
+            var item = Fixtures.Item();
+            item.UpdateDetails(new()
+            {
+                CreatedAtUtc = ObservationTime
+            });
+            var repository = new MemoryRepository(item);
+            using var http = CreateHttp(JsonSerializer.Serialize(new
+            {
+                data = new[] { new { id = 1, name = "Item", itemType = "Asset", itemRestrictions = Array.Empty<string>(), creatorTargetId = 1, creatorType = "User", creatorName = "Display name is not identity", itemCreatedUtc = ObservationTime.AddDays(1) } }
+            }));
+            var importer = new ImportRobloxItemService(new RobloxCatalogClient(http), repository, new PendingThumbnail(), NullLogger<ImportRobloxItemService>.Instance, new MemoryFailureStore(), new CatalogRefreshPolicy());
+            await importer.ImportAsync(1);
+            Check.That(repository.Saves == 1 && repository.DeletedAssetIds.Count == 0, "Official user was not persisted");
+            Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime.AddDays(1), "Import did not preserve creation and advance update");
+        });
+
+        suite.Test("Catalog dates preserve first creation and advance only on newer remote dates", () =>
+        {
+            var item = Fixtures.Item();
+            var initial = new ItemCatalogDetails { CreatedAtUtc = ObservationTime };
+            item.UpdateDetails(initial);
+            Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime, "Initial dates were not assigned together");
+            var unchangedAt = item.LastUpdatedAt;
+            item.UpdateDetails(initial);
+            Check.That(item.LastUpdatedAt == unchangedAt, "Equal remote date changed the content timestamp");
+            item.UpdateDetails(initial with
+            {
+                CreatedAtUtc = ObservationTime.AddDays(10)
+            });
+            Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime.AddDays(10), "Newer remote date replaced creation or did not advance update");
+            var changedAt = item.LastUpdatedAt;
+            foreach (var remoteDate in new DateTime?[] { ObservationTime.AddDays(-1), ObservationTime, ObservationTime.AddDays(5), ObservationTime.AddDays(10), null })
+            {
+                item.UpdateDetails(initial with
+                {
+                    CreatedAtUtc = remoteDate
+                });
+                Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime.AddDays(10), "Missing or older response overwrote stored dates");
+                Check.That(item.LastUpdatedAt == changedAt, "Ignored date changed the content timestamp");
+            }
+            var response = ItemResponse.From(item);
+            Check.That(response.RobloxCreatedAtUtc == ObservationTime && response.RobloxUpdatedAtUtc == ObservationTime.AddDays(10), "API changed the observed dates");
+        });
+        suite.Test("Catalog dates tolerate missing first date and initialize legacy update", () =>
+        {
+            var item = Fixtures.Item();
+            item.UpdateDetails(new());
+            Check.That(item.RobloxCreatedAtUtc is null && item.RobloxUpdatedAtUtc is null, "Missing date was invented");
+            item.UpdateDetails(new()
+            {
+                CreatedAtUtc = ObservationTime
+            });
+            typeof(Item).GetProperty(nameof(Item.RobloxUpdatedAtUtc))!.SetValue(item, null);
+            item.UpdateDetails(new()
+            {
+                CreatedAtUtc = ObservationTime.AddDays(-1)
+            });
+            Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime, "Legacy date was not initialized from preserved creation");
+            item.UpdateDetails(new()
+            {
+                CreatedAtUtc = ObservationTime.AddDays(1)
+            });
+            Check.That(item.RobloxCreatedAtUtc == ObservationTime && item.RobloxUpdatedAtUtc == ObservationTime.AddDays(1), "Legacy date did not advance");
+        });
+
         suite.AsyncTest("Catalog retries CSRF challenge once with unchanged payload", async () =>
         {
             var calls = 0;
@@ -160,7 +253,7 @@ internal static class MarketTests
             });
             var response = ItemResponse.From(item);
             Check.That(response.CreatorId == 1 && response.AssetTypeId == 46 && response.Description == "Wings", "Metadata lost in API");
-            Check.That(response.Restrictions.SequenceEqual(new[] { "Collectible", "Limited" }) && response.RobloxCreatedAtUtc == ObservationTime && response.RobloxUpdatedAtUtc is null, "Restrictions or timestamps fabricated");
+            Check.That(response.Restrictions.SequenceEqual(new[] { "Collectible", "Limited" }) && response.RobloxCreatedAtUtc == ObservationTime && response.RobloxUpdatedAtUtc == ObservationTime, "Restrictions or timestamps fabricated");
         });
         suite.Test("Limited unique transition emits one event across limited classifications", () =>
         {
@@ -192,7 +285,7 @@ internal static class MarketTests
                 Check.That(remote.MarketStatus == expected && remote.Details!.Restrictions.Single() == restriction, "Restriction collapsed");
                 Check.That(remote.Market!.PrimaryPriceRobux == 84 && remote.Market.LowestResalePriceRobux == 105 && remote.Market.LowestPriceRobux == 84 && remote.Market.PriceBeforeDiscountRobux == 105, "Price meanings conflated");
                 Check.That(remote.Market.FavoriteCount == 75454 && remote.Market.TotalQuantity == 10000000 && remote.Market.UnitsAvailableForConsumption == 9491761, "Counts lost");
-                Check.That(remote.Details!.CreatedAtUtc == DateTime.Parse("2024-01-17T19:37:46.953Z").ToUniversalTime() && remote.Details.UpdatedAtUtc is null, "Remote dates wrong");
+                Check.That(remote.Details!.CreatedAtUtc == DateTime.Parse("2024-01-17T19:37:46.953Z").ToUniversalTime(), "Remote dates wrong");
             });
         }
         suite.AsyncTest("Catalog accepts numeric enums and keeps missing market fields null", async () =>

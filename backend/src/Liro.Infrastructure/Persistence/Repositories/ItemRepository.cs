@@ -70,6 +70,11 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.NextRefreshAt, retryAtUtc), cancellationToken);
     }
 
+    public async Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    {
+        await CatalogItemDeletion.DeleteAsync(dbContext, dbContext.Items.Where(item => item.RobloxAssetId == assetId), cancellationToken);
+    }
+
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
         try

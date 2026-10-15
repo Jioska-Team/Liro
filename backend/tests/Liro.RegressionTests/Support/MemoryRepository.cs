@@ -6,6 +6,12 @@ namespace Liro.RegressionTests;
 sealed class MemoryRepository(Item item) : IItemRepository
 {
     public int Saves;
+    public List<long> DeletedAssetIds { get; } = [];
+    public Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    {
+        DeletedAssetIds.Add(assetId);
+        return Task.CompletedTask;
+    }
     public List<long> SavedAssetIds { get; } = [];
 
     public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
