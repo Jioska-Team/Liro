@@ -1,3 +1,5 @@
+using Liro.Domain.Catalog.Models;
+using Liro.Domain.Catalog.Enums;
 using Liro.Application.Catalog.Repositories;
 using Liro.Application.Common;
 using Liro.Domain.Catalog.Entities;
@@ -18,12 +20,12 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         return item;
     }
 
-    public async Task<Item?> GetByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    public async Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
         var item = await dbContext.Items
             .Include(x => x.MarketState)
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.RobloxAssetId == assetId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.RobloxAssetId == key.Id && x.ItemType == key.Type, cancellationToken);
 
         return item;
     }
@@ -31,7 +33,7 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
     public async Task<bool> ExistsByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
     {
         var exists = await dbContext.Items
-            .AnyAsync(x => x.RobloxAssetId == assetId, cancellationToken);
+            .AnyAsync(x => x.RobloxAssetId == assetId && x.ItemType == CatalogItemType.Asset, cancellationToken);
 
         return exists;
     }
@@ -48,33 +50,54 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         await SaveAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime dueAtUtc, int limit, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime dueAtUtc, int limit, CancellationToken cancellationToken = default)
     {
         var assetIds = await dbContext.Items
             .AsNoTracking()
             .Where(x => x.NextRefreshAt <= dueAtUtc
-                && !dbContext.Set<CatalogImportFailure>().Any(f => f.AssetId == x.RobloxAssetId))
+                && !dbContext.Set<CatalogImportFailure>().Any(f => f.AssetId == x.RobloxAssetId && f.ItemType == x.ItemType))
             .OrderBy(x => x.NextRefreshAt)
             .ThenBy(x => x.Id)
-            .Select(x => x.RobloxAssetId)
+            .Select(x => new CatalogItemKey(x.RobloxAssetId, x.ItemType))
             .Take(limit)
             .ToListAsync(cancellationToken);
 
         return assetIds;
     }
 
-    public async Task DeferRefreshAsync(long assetId, DateTime retryAtUtc, CancellationToken cancellationToken = default)
+    public async Task DeferRefreshAsync(CatalogItemKey key, DateTime retryAtUtc, CancellationToken cancellationToken = default)
     {
         await dbContext.Items
-            .Where(x => x.RobloxAssetId == assetId && x.NextRefreshAt < retryAtUtc)
+            .Where(x => x.RobloxAssetId == key.Id && x.ItemType == key.Type && x.NextRefreshAt < retryAtUtc)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.NextRefreshAt, retryAtUtc), cancellationToken);
     }
 
-    public async Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    public async Task DeleteAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
-        await CatalogItemDeletion.DeleteAsync(dbContext, dbContext.Items.Where(item => item.RobloxAssetId == assetId), cancellationToken);
+        await CatalogItemDeletion.DeleteAsync(dbContext, dbContext.Items.Where(item => item.RobloxAssetId == key.Id && item.ItemType == key.Type), cancellationToken);
     }
 
+    public async Task<Item?> GetByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    {
+        var item = await GetByCatalogIdAsync(new CatalogItemKey(assetId), cancellationToken);
+        return item;
+    }
+    public async Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime dueAtUtc, int limit, CancellationToken cancellationToken = default)
+    {
+        var ids = await dbContext.Items.AsNoTracking()
+            .Where(x => x.ItemType == CatalogItemType.Asset && x.NextRefreshAt <= dueAtUtc
+                && !dbContext.Set<CatalogImportFailure>().Any(f => f.ItemType == x.ItemType && f.AssetId == x.RobloxAssetId))
+            .OrderBy(x => x.NextRefreshAt).ThenBy(x => x.Id).Select(x => x.RobloxAssetId).Take(limit).ToListAsync(cancellationToken);
+        return ids;
+    }
+    public async Task DeferRefreshAsync(long assetId, DateTime retryAtUtc, CancellationToken cancellationToken = default)
+    {
+        await DeferRefreshAsync(new CatalogItemKey(assetId), retryAtUtc, cancellationToken);
+    }
+    public async Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    {
+        await DeleteAsync(new CatalogItemKey(assetId), cancellationToken);
+    }
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
         try
@@ -93,3 +116,4 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         }
     }
 }
+

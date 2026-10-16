@@ -10,5 +10,8 @@ public sealed class CatalogCheckpointConfiguration : IEntityTypeConfiguration<Ca
         builder.ToTable("CatalogCheckpoints");
         builder.HasKey(x => x.Scope);
         builder.Property(x => x.Scope).HasMaxLength(200);
+        builder.Property(x => x.CoverageStatus).HasMaxLength(40);
+        builder.Property(x => x.LastError).HasMaxLength(2000);
     }
 }
+

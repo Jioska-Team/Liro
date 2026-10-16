@@ -31,6 +31,30 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         return item is null ? NotFound() : Ok(ItemResponse.From(item));
     }
 
+    [HttpGet("by-bundle/{bundleId:long}")]
+    public async Task<IActionResult> GetByBundleId(long bundleId, CancellationToken cancellationToken)
+    {
+        if (bundleId <= 0)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Bundle ID must be positive." });
+        }
+        var item = await itemService.GetByBundleIdAsync(bundleId, cancellationToken);
+        var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
+        return response;
+    }
+    [HttpPost("import-bundle/{bundleId:long}")]
+    [Authorize(Policy = "CatalogAdmin")]
+    [EnableRateLimiting("catalog-writes")]
+    public async Task<IActionResult> ImportBundle(long bundleId, CancellationToken cancellationToken)
+    {
+        if (bundleId <= 0)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = "Bundle ID must be positive." });
+        }
+        var item = await importer.ImportAsync(new Liro.Domain.Catalog.Models.CatalogItemKey(bundleId, CatalogItemType.Bundle), cancellationToken);
+        var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
+        return response;
+    }
     [HttpPost("import/{assetId:long}")]
     [Authorize(Policy = "CatalogAdmin")]
     [EnableRateLimiting("catalog-writes")]
@@ -59,3 +83,4 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
 }
 
 public sealed record CreateItemRequest([Range(typeof(long), "1", "9223372036854775807")] long RobloxAssetId, [Required, StringLength(200, MinimumLength = 1)] string Name, Guid? CollectibleItemId, [EnumDataType(typeof(ItemMarketStatus))] ItemMarketStatus MarketStatus);
+

@@ -32,6 +32,9 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<int?>("AssetTypeId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("BundleTypeId")
+                        .HasColumnType("integer");
+
                     b.Property<Guid?>("CollectibleItemId")
                         .HasColumnType("uuid");
 
@@ -50,6 +53,11 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("FirstSeenAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTime?>("LastCheckedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -65,7 +73,7 @@ namespace Liro.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("text")
-                        .HasComputedColumnSql("'https://www.roblox.com/catalog/' || \"RobloxAssetId\"::text", true);
+                        .HasComputedColumnSql("CASE WHEN \"ItemType\" = 'Bundle' THEN 'https://www.roblox.com/bundles/' ELSE 'https://www.roblox.com/catalog/' END || \"RobloxAssetId\"::text", true);
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -108,7 +116,7 @@ namespace Liro.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("NextRefreshAt");
 
-                    b.HasIndex("RobloxAssetId")
+                    b.HasIndex("ItemType", "RobloxAssetId")
                         .IsUnique();
 
                     b.ToTable("Items", (string)null);
@@ -241,8 +249,29 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<bool>("Completed")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("CoverageStatus")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
                     b.Property<string>("Cursor")
                         .HasColumnType("text");
+
+                    b.Property<long>("ItemFailures")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ItemsAdded")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ItemsSeen")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("PagesProcessed")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -254,6 +283,10 @@ namespace Liro.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Liro.Infrastructure.Persistence.CatalogImportFailure", b =>
                 {
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<long>("AssetId")
                         .HasColumnType("bigint");
 
@@ -271,7 +304,7 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("NextAttemptAtUtc")
                         .HasColumnType("timestamp with time zone");
 
-                    b.HasKey("AssetId");
+                    b.HasKey("ItemType", "AssetId");
 
                     b.HasIndex("NextAttemptAtUtc")
                         .HasFilter("\"DeadLetteredAtUtc\" IS NULL");

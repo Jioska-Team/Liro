@@ -10,7 +10,15 @@ public sealed class CatalogCheckpointStore(LiroDbContext db) : ICatalogCheckpoin
         var state = await db.Set<CatalogCheckpointState>()
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Scope == scope, cancellationToken);
-        var checkpoint = new CatalogCheckpoint(state?.Cursor, state?.Completed ?? false);
+        var checkpoint = state is null ? new CatalogCheckpoint(null, false) : new CatalogCheckpoint(state.Cursor, state.Completed)
+        {
+            ItemsSeen = state.ItemsSeen,
+            PagesProcessed = state.PagesProcessed,
+            ItemsAdded = state.ItemsAdded,
+            ItemFailures = state.ItemFailures,
+            CoverageStatus = state.CoverageStatus,
+            LastError = state.LastError
+        };
 
         return checkpoint;
     }
@@ -20,11 +28,15 @@ public sealed class CatalogCheckpointStore(LiroDbContext db) : ICatalogCheckpoin
         var now = DateTime.UtcNow;
         await db.Database.ExecuteSqlInterpolatedAsync(
             $"""
-            INSERT INTO "CatalogCheckpoints" ("Scope", "Cursor", "Completed", "UpdatedAtUtc")
-            VALUES ({scope}, {checkpoint.Cursor}, {checkpoint.Completed}, {now})
+            INSERT INTO "CatalogCheckpoints" ("Scope", "Cursor", "Completed", "UpdatedAtUtc", "ItemsSeen", "PagesProcessed", "ItemsAdded", "ItemFailures", "CoverageStatus", "LastError")
+            VALUES ({scope}, {checkpoint.Cursor}, {checkpoint.Completed}, {now}, {checkpoint.ItemsSeen}, {checkpoint.PagesProcessed}, {checkpoint.ItemsAdded}, {checkpoint.ItemFailures}, {checkpoint.CoverageStatus}, {checkpoint.LastError})
             ON CONFLICT ("Scope") DO UPDATE SET
-            "Cursor" = EXCLUDED."Cursor", "Completed" = EXCLUDED."Completed", "UpdatedAtUtc" = EXCLUDED."UpdatedAtUtc"
+            "Cursor" = EXCLUDED."Cursor", "Completed" = EXCLUDED."Completed", "UpdatedAtUtc" = EXCLUDED."UpdatedAtUtc",
+            "ItemsSeen" = EXCLUDED."ItemsSeen", "PagesProcessed" = EXCLUDED."PagesProcessed",
+            "ItemsAdded" = EXCLUDED."ItemsAdded", "ItemFailures" = EXCLUDED."ItemFailures",
+            "CoverageStatus" = EXCLUDED."CoverageStatus", "LastError" = EXCLUDED."LastError"
             """,
             cancellationToken);
     }
 }
+

@@ -35,7 +35,7 @@ public sealed class DatabaseInitializationService(IServiceScopeFactory scopes, I
                 var interval = policy.Interval;
                 var rescheduled = await db.Items
                     .Where(policy.GetLegacyScheduleFilter())
-                    .Where(item => !db.Set<CatalogImportFailure>().Any(failure => failure.AssetId == item.RobloxAssetId))
+                    .Where(item => !db.Set<CatalogImportFailure>().Any(failure => failure.AssetId == item.RobloxAssetId && failure.ItemType == item.ItemType))
                     .ExecuteUpdateAsync(update => update.SetProperty(item => item.NextRefreshAt, item => item.LastCheckedAt!.Value.AddMinutes(interval.TotalMinutes)), cancellationToken);
                 logger.LogInformation("Database schema is ready. Rescheduled {Count} legacy catalog checks; refresh interval {Interval}.", rescheduled, interval);
                 return;
@@ -50,3 +50,4 @@ public sealed class DatabaseInitializationService(IServiceScopeFactory scopes, I
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }
+

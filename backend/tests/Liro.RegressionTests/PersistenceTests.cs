@@ -149,8 +149,9 @@ sealed class DeletionCommandProbe(DeletionDatabaseProbe probe) : Microsoft.Entit
         var table = new System.Data.DataTable();
         table.Columns.Add("Id", typeof(Guid));
         table.Columns.Add("RobloxAssetId", typeof(long));
+        table.Columns.Add("ItemType", typeof(string));
         if (probe.WithItems)
-            table.Rows.Add(Guid.Parse("11111111-1111-1111-1111-111111111111"), 1L);
+            table.Rows.Add(Guid.Parse("11111111-1111-1111-1111-111111111111"), 1L, "Asset");
         System.Data.Common.DbDataReader reader = table.CreateDataReader();
         return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>.SuppressWithResult(reader));
     }
@@ -164,3 +165,4 @@ sealed class DeletionCommandProbe(DeletionDatabaseProbe probe) : Microsoft.Entit
         return ValueTask.FromResult(Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>.SuppressWithResult(1));
     }
 }
+

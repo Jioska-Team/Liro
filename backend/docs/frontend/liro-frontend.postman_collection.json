@@ -27,6 +27,11 @@
       "key": "before",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "bundleId",
+      "value": "126",
+      "type": "string"
     }
   ],
   "item": [
@@ -101,6 +106,15 @@
         "header": [],
         "url": "{{baseUrl}}/api/v1/items/{{itemId}}/market-history?limit=100&before={{before}}",
         "description": "before exclusivo. Cambiarlo por observedAtUtc del ultimo elemento de cada pagina; detenerse cuando el array este vacio."
+      }
+    },
+    {
+      "name": "Bundle por ID Roblox",
+      "request": {
+        "method": "GET",
+        "description": "200 ItemResponse con itemType Bundle, robloxItemId y robloxAssetId null; 404 si no esta importado. Usa id para historial.",
+        "url": "{{baseUrl}}/api/v1/items/by-bundle/{{bundleId}}",
+        "header": []
       }
     }
   ]

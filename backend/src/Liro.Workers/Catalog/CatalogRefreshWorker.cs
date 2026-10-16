@@ -21,14 +21,9 @@ public sealed class CatalogRefreshWorker(IServiceScopeFactory scopeFactory, ILog
             {
                 using var scope = scopeFactory.CreateScope();
                 var now = DateTime.UtcNow;
-                var retryIds = await scope.ServiceProvider.GetRequiredService<ICatalogImportFailureStore>().GetDueAsync(now, options.BatchSize, stoppingToken);
-                var staleIds = await scope.ServiceProvider.GetRequiredService<IItemRepository>().GetStaleAssetIdsAsync(now, options.BatchSize, stoppingToken);
-                foreach (var id in retryIds.Concat(staleIds).Distinct())
-                {
-                    using var itemScope = scopeFactory.CreateScope();
-                    await itemScope.ServiceProvider.GetRequiredService<CatalogImportProcessor>().ProcessAsync(id, false, stoppingToken);
-                    await Task.Delay(options.ItemDelay, stoppingToken);
-                }
+                var retryIds = await scope.ServiceProvider.GetRequiredService<ICatalogImportFailureStore>().GetDueItemsAsync(now, options.BatchSize, stoppingToken);
+                var staleIds = await scope.ServiceProvider.GetRequiredService<IItemRepository>().GetStaleItemsAsync(now, options.BatchSize, stoppingToken);
+                await CatalogBatchProcessor.ProcessAsync(scopeFactory, retryIds.Concat(staleIds), false, options, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -48,3 +43,6 @@ public sealed class CatalogRefreshWorker(IServiceScopeFactory scopeFactory, ILog
         }
     }
 }
+
+
+

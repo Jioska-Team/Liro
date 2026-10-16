@@ -60,9 +60,9 @@ internal static class RobloxTests
             var client = new RobloxCatalogDiscoveryClient(http, Microsoft.Extensions.Options.Options.Create(new RobloxCatalogOptions { CreatorTargetId = null }));
             var result = await client.GetRecentlyUpdatedPageAsync("abc&injected=true");
             Check.That(
-                requested!.AbsolutePath == "/v1/search/items/details" && requested.Query.Contains("SortType=3") && requested.Query.Contains("abc%26injected%3Dtrue") && !requested.Query.Contains("CreatorTargetId"),
+                requested!.AbsolutePath == "/v2/search/items/details" && requested.Query.Contains("SortType=3") && requested.Query.Contains("abc%26injected%3Dtrue") && !requested.Query.Contains("CreatorTargetId"),
                 "Pagination escaped the configured contract");
-            Check.That(result.AssetIds.Count == 1 && result.AssetIds[0] == 1, "Nonassets or duplicates leaked into discovery");
+            Check.That(result.Items.Count == 2 && result.Items.Any(x => x.Type == Liro.Domain.Catalog.Enums.CatalogItemType.Bundle), "Bundles were dropped or duplicates retained");
         });
         suite.AsyncTest("429 pauses all Roblox clients without automatic retry bursts", async () =>
         {
@@ -206,3 +206,4 @@ internal static class RobloxTests
         });
     }
 }
+

@@ -9,6 +9,8 @@ public sealed class CatalogWorkerOptions
     public TimeSpan ItemDelay { get; set; } = TimeSpan.FromSeconds(2);
     public TimeSpan PageDelay { get; set; } = TimeSpan.FromSeconds(5);
     public TimeSpan CycleInterval { get; set; } = TimeSpan.FromMinutes(5);
+    public int DetailsBatchSize { get; set; } = 10;
     public int BatchSize { get; set; } = 50;
     public int DiscoveryPages { get; set; } = 5;
 }
+

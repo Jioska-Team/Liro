@@ -5,7 +5,7 @@ namespace Liro.Api.Contracts;
 
 public sealed record ItemResponse(
     Guid Id,
-    long RobloxAssetId,
+    long? RobloxAssetId,
     Guid? CollectibleItemId,
     string Name,
     ItemMarketStatus MarketStatus,
@@ -15,6 +15,15 @@ public sealed record ItemResponse(
     DateTime LastUpdatedAt,
     DateTime? LastCheckedAt)
 {
+    public long RobloxItemId
+    {
+        get; init;
+    }
+    public string ItemType { get; init; } = "Asset";
+    public int? BundleTypeId
+    {
+        get; init;
+    }
     public string MarketplaceUrl { get; init; } = string.Empty;
     public string? Description
     {
@@ -54,7 +63,7 @@ public sealed record ItemResponse(
     {
         var response = new ItemResponse(
         item.Id,
-        item.RobloxAssetId,
+        item.ItemType == CatalogItemType.Asset ? item.RobloxAssetId : null,
         item.CollectibleItemId,
         item.Name,
         item.MarketStatus,
@@ -64,6 +73,9 @@ public sealed record ItemResponse(
         item.LastUpdatedAt,
         item.LastCheckedAt)
         {
+            RobloxItemId = item.RobloxAssetId,
+            ItemType = item.ItemType.ToString(),
+            BundleTypeId = item.BundleTypeId,
             Description = item.Description,
             MarketplaceUrl = item.MarketplaceUrl,
             CreatorId = item.CreatorId,
@@ -78,3 +90,5 @@ public sealed record ItemResponse(
         return response;
     }
 }
+
+

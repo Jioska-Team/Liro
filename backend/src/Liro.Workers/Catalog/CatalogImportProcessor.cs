@@ -1,44 +1,77 @@
+using System.Text.Json;
+using Liro.Domain.Catalog.Models;
+using Liro.Domain.Catalog.Entities;
 using Liro.Application.Catalog.Repositories;
 using Liro.Application.Catalog.Services;
+using Liro.Application.RobloxIntegration.Models;
 
 namespace Liro.Workers.Catalog;
-// Persist failures independently of page cursors so a bad asset cannot block the whole catalog.
+
+// Persist item failures before callers advance their page checkpoint.
 public sealed class CatalogImportProcessor(ImportRobloxItemService importer, IItemRepository repository, ICatalogImportFailureStore failures, ILogger<CatalogImportProcessor> logger)
 {
-    public async Task ProcessAsync(long assetId, bool skipFresh, CancellationToken cancellationToken)
+    public async Task<bool> CanProcessAsync(CatalogItemKey key, bool onlyNew, CancellationToken cancellationToken)
     {
-        if (!await failures.CanAttemptAsync(assetId, DateTime.UtcNow, cancellationToken))
+        key.Validate();
+        if (onlyNew && await repository.GetByCatalogIdAsync(key, cancellationToken) is not null)
         {
-            return;
+            return false;
         }
+        var allowed = await failures.CanAttemptAsync(key, DateTime.UtcNow, cancellationToken);
+        return allowed;
+    }
 
-        if (skipFresh)
+    public async Task<bool> ProcessAsync(CatalogItemKey key, bool onlyNew, CancellationToken cancellationToken)
+    {
+        if (!await CanProcessAsync(key, onlyNew, cancellationToken))
         {
-            var existing = await repository.GetByAssetIdAsync(assetId, cancellationToken);
-            if (existing?.LastCheckedAt is not null && existing.NextRefreshAt > DateTime.UtcNow)
+            return false;
+        }
+        await PersistAsync(key, () => importer.ImportAsync(key, cancellationToken), cancellationToken);
+        return true;
+    }
+
+    public async Task<(bool Added, bool Failed)> ProcessResultAsync(CatalogItemKey key, RobloxCatalogResult result, bool onlyNew, CancellationToken cancellationToken)
+    {
+        if (!await CanProcessAsync(key, onlyNew, cancellationToken))
+        {
+            return (false, false);
+        }
+        var added = false;
+        var succeeded = await PersistAsync(key, async () =>
+        {
+            if (result.Error is not null || result.Item is null)
             {
-                return;
+                throw new JsonException(result.Error ?? "Item omitted from catalog response.");
             }
-        }
-
+            var outcome = await importer.ApplyWithOutcomeAsync(key, result.Item, onlyNew, cancellationToken);
+            added = outcome.Added;
+            return outcome.Item;
+        }, cancellationToken);
+        return (added, !succeeded);
+    }
+    private async Task<bool> PersistAsync(CatalogItemKey key, Func<Task<Item?>> operation, CancellationToken cancellationToken)
+    {
         try
         {
-            await importer.ImportAsync(assetId, cancellationToken);
+            await operation();
+            return true;
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-        {
-            throw;
-        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.TooManyRequests) { throw; }
         catch (Exception exception)
         {
-            // If persisting the retry fails too, propagate it: the caller must not advance its cursor.
-            await failures.RecordFailureAsync(assetId, exception.Message, DateTime.UtcNow, cancellationToken);
-            await repository.DeferRefreshAsync(assetId, DateTime.UtcNow.AddMinutes(5), cancellationToken);
-            logger.LogWarning(exception, "Asset {AssetId} import queued for independent retry; other items can continue.", assetId);
+            await failures.RecordFailureAsync(key, exception.Message, DateTime.UtcNow, cancellationToken);
+            await repository.DeferRefreshAsync(key, DateTime.UtcNow.AddMinutes(5), cancellationToken);
+            logger.LogWarning(exception, "Catalog item {Key} queued for independent retry.", key);
+            return false;
         }
     }
+
+    public async Task<bool> ProcessAsync(long assetId, bool onlyNew, CancellationToken cancellationToken)
+    {
+        var attempted = await ProcessAsync(new CatalogItemKey(assetId), onlyNew, cancellationToken);
+        return attempted;
+    }
 }
+

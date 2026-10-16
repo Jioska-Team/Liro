@@ -1,3 +1,5 @@
+using Liro.Domain.Catalog.Models;
+using Liro.Domain.Catalog.Enums;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,12 +9,15 @@ namespace Liro.Infrastructure.Roblox;
 
 public sealed class RobloxThumbnailClient(HttpClient httpClient) : IRobloxThumbnailClient
 {
-    public async Task<string?> GetAssetThumbnailAsync(long assetId, CancellationToken cancellationToken = default)
+    public async Task<string?> GetThumbnailAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
+        key.Validate();
         try
         {
-            var response = await httpClient.GetFromJsonAsync<ThumbnailResponse>($"v1/assets?assetIds={assetId}&size=420x420&format=WebP&isCircular=false", cancellationToken);
-            var thumbnail = response?.Data?.FirstOrDefault(x => x.TargetId == assetId);
+            var resource = key.Type == CatalogItemType.Bundle ? "bundles/thumbnails?bundleIds" : "assets?assetIds";
+            var format = key.Type == CatalogItemType.Bundle ? "Png" : "WebP";
+            var response = await httpClient.GetFromJsonAsync<ThumbnailResponse>($"v1/{resource}={key.Id}&size=420x420&format={format}&isCircular=false", cancellationToken);
+            var thumbnail = response?.Data?.FirstOrDefault(x => x.TargetId == key.Id);
             if (thumbnail is null || !string.Equals(thumbnail.State, "Completed", StringComparison.OrdinalIgnoreCase))
             {
                 return null;
@@ -35,6 +40,11 @@ public sealed class RobloxThumbnailClient(HttpClient httpClient) : IRobloxThumbn
         }
     }
 
+    public async Task<string?> GetAssetThumbnailAsync(long assetId, CancellationToken cancellationToken = default)
+    {
+        var thumbnail = await GetThumbnailAsync(new CatalogItemKey(assetId), cancellationToken);
+        return thumbnail;
+    }
     private sealed class ThumbnailResponse
     {
         [JsonPropertyName("data")]
@@ -65,3 +75,5 @@ public sealed class RobloxThumbnailClient(HttpClient httpClient) : IRobloxThumbn
         }
     }
 }
+
+

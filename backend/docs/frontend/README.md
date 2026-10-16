@@ -28,6 +28,7 @@ Todas estas solicitudes son GET, sin cuerpo ni autenticacion.
 | --- | --- | --- | --- |
 | `/api/lan/ready` | Comprobar API, PostgreSQL y cache | `LanReadinessResponse` | 503 si no esta lista |
 | `/api/v1/items/by-asset/{assetId}` | Buscar un item guardado por ID numerico Roblox | `ItemResponse` | 400 si ID <= 0; 404 si no existe |
+| `/api/v1/items/by-bundle/{bundleId}` | Buscar un bundle oficial guardado | `ItemResponse` | 400 si ID <= 0; 404 si no existe |
 | `/api/v1/items/{id}` | Buscar por UUID interno de Liro | `ItemResponse` | 404 si no existe |
 | `/api/v1/items/{id}/market-history?limit=100&before=...` | Observaciones historicas de mercado | `ItemMarketResponse[]` | 400 parametros invalidos; 404 si no existe el item |
 
@@ -66,7 +67,9 @@ Los tipos TypeScript adjuntos describen JSON; no validan los datos en tiempo de 
 | Campo de ItemResponse | Significado |
 | --- | --- |
 | `id` | UUID interno, usado para detalle e historial |
-| `robloxAssetId` | ID numerico Roblox guardado |
+| `robloxItemId`, `itemType` | Identidad Roblox: ID numerico y tipo `Asset` o `Bundle`; dos tipos pueden compartir ID |
+| `robloxAssetId` | ID para assets; null para bundles. Para codigo nuevo usar robloxItemId + itemType |
+| `bundleTypeId` | Codigo numerico del tipo de bundle; null para assets. No confundir con assetTypeId |
 | `collectibleItemId` | UUID collectible cuando esta disponible; su presencia no sustituye `marketStatus` |
 | `name`, `description` | Nombre y descripcion del catalogo; mostrar descripcion como texto, no HTML confiable |
 | `marketplaceUrl` | Enlace externo al marketplace; usar este valor en lugar de construir un slug |
@@ -218,3 +221,13 @@ esta guia, api-models.ts y las solicitudes de Postman en el mismo cambio.
 El OpenAPI actual se genera desde handlers que devuelven IActionResult: puede omitir
 esquemas de respuesta sin metadatos explicitos. Estos modelos revisados cubren ese hueco;
 no se presenta un cliente generado como contrato completo.
+
+## Bundles
+
+Consultar `/api/v1/items/by-bundle/126` sigue el mismo contrato de detalle e historial.
+`marketplaceUrl` usa `/bundles/{id}`; para assets usa `/catalog/{id}`.
+`assetTypeId` es null en bundles; `bundleTypeId` identifica su categoria.
+La API devuelve el bundle como objeto de catalogo, no enumera sus piezas internas.
+La importacion administrativa `POST /api/v1/items/import-bundle/{bundleId}` exige
+la misma autenticacion, HTTPS y limites que `import/{assetId}`; no esta habilitada
+por LAN. Las consultas GET solo leen lo ya importado.

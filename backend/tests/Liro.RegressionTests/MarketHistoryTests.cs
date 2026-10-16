@@ -23,7 +23,7 @@ internal static class MarketHistoryTests
             Check.That(operation!.ComputedColumnSql == "'https://www.roblox.com/catalog/' || \"RobloxAssetId\"::text", "Existing asset URLs will be incorrect");
             using var db = CreateContext();
             var property = db.Model.FindEntityType(typeof(Item))!.FindProperty(nameof(Item.MarketplaceUrl))!;
-            Check.That(property.GetComputedColumnSql() == operation.ComputedColumnSql && property.GetIsStored() == true, "EF and migration disagree");
+            Check.That(property.GetComputedColumnSql() == new AddCatalogItemTypes().UpOperations.OfType<AlterColumnOperation>().Single(x => x.Name == "MarketplaceUrl").ComputedColumnSql && property.GetIsStored() == true, "EF and migration disagree");
         });
         suite.Test("Market migration adds schema without deleting existing data", () =>
         {
@@ -128,3 +128,4 @@ internal static class MarketHistoryTests
         }
     }
 }
+

@@ -1,3 +1,4 @@
+using Liro.Domain.Catalog.Models;
 using Liro.Application.Catalog.Repositories;
 using Liro.Domain.Catalog.Entities;
 using Liro.Domain.Catalog.Enums;
@@ -22,6 +23,11 @@ public sealed class ItemService
         return _repository.GetByAssetIdAsync(robloxAssetId, cancellationToken);
     }
 
+    public async Task<Item?> GetByBundleIdAsync(long bundleId, CancellationToken cancellationToken = default)
+    {
+        var item = await _repository.GetByCatalogIdAsync(new CatalogItemKey(bundleId, CatalogItemType.Bundle), cancellationToken);
+        return item;
+    }
     public async Task<Item?> CreateAsync(long robloxAssetId, string name, Guid? collectibleItemId, ItemMarketStatus marketStatus, CancellationToken cancellationToken = default)
     {
         if (await _repository.ExistsByAssetIdAsync(robloxAssetId, cancellationToken))
@@ -34,3 +40,4 @@ public sealed class ItemService
         return item;
     }
 }
+

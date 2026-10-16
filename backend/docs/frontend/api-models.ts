@@ -32,7 +32,9 @@ export interface ItemMarketResponse {
 }
 export interface ItemResponse {
   id: Uuid;
-  robloxAssetId: number;
+  robloxItemId: number;
+  itemType: 'Asset' | 'Bundle';
+  robloxAssetId: number | null;
   collectibleItemId: Uuid | null;
   name: string;
   marketStatus: ItemMarketStatus;
@@ -47,6 +49,7 @@ export interface ItemResponse {
   creatorType: string | null;
   creatorName: string | null;
   assetTypeId: number | null;
+  bundleTypeId: number | null;
   restrictions: string[];
   robloxCreatedAtUtc: IsoDateTime | null;
   robloxUpdatedAtUtc: IsoDateTime | null;
@@ -74,3 +77,6 @@ export interface CreateItemRequest {
   collectibleItemId: Uuid | null;
   marketStatus: ItemMarketStatus;
 }
+
+
+

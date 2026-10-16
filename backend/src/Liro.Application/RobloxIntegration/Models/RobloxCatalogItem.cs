@@ -5,6 +5,7 @@ namespace Liro.Application.RobloxIntegration.Models;
 
 public sealed record RobloxCatalogItem(long AssetId, string Name, Guid? CollectibleItemId, ItemMarketStatus MarketStatus)
 {
+    public CatalogItemType ItemType { get; init; } = CatalogItemType.Asset;
     public ItemCatalogDetails? Details
     {
         get; init;
@@ -19,3 +20,4 @@ public sealed record RobloxCatalogItem(long AssetId, string Name, Guid? Collecti
     }
     public string Source { get; init; } = "RobloxCatalogDetailsV1";
 }
+

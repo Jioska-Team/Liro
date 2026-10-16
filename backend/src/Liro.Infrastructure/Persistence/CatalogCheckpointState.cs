@@ -15,4 +15,26 @@ public sealed class CatalogCheckpointState
     {
         get; set;
     }
+    public long ItemsSeen
+    {
+        get; set;
+    }
+    public int PagesProcessed
+    {
+        get; set;
+    }
+    public long ItemsAdded
+    {
+        get; set;
+    }
+    public long ItemFailures
+    {
+        get; set;
+    }
+    public string CoverageStatus { get; set; } = "Unassessed";
+    public string? LastError
+    {
+        get; set;
+    }
 }
+

@@ -19,8 +19,9 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         builder.Property(x => x.RobloxAssetId).IsRequired();
         // Generated for existing rows too; item names and localization are not URL identifiers.
         builder.Property(x => x.MarketplaceUrl)
-            .HasComputedColumnSql("'https://www.roblox.com/catalog/' || \"RobloxAssetId\"::text", stored: true);
-        builder.HasIndex(x => x.RobloxAssetId).IsUnique();
+            .HasComputedColumnSql("CASE WHEN \"ItemType\" = 'Bundle' THEN 'https://www.roblox.com/bundles/' ELSE 'https://www.roblox.com/catalog/' END || \"RobloxAssetId\"::text", stored: true);
+        builder.HasIndex(x => new { x.ItemType, x.RobloxAssetId }).IsUnique();
+        builder.Property(x => x.ItemType).HasConversion<string>().HasMaxLength(16);
         builder.Property(x => x.CollectibleItemId);
         builder.HasIndex(x => x.CollectibleItemId).IsUnique();
         builder.Property(x => x.Name).HasMaxLength(200).IsRequired();
@@ -31,3 +32,4 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         builder.Property(x => x.ThumbnailUpdatedAt);
     }
 }
+

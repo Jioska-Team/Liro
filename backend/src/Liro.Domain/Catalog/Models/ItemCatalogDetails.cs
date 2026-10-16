@@ -22,9 +22,14 @@ public sealed record ItemCatalogDetails
     {
         get; init;
     }
+    public int? BundleTypeId
+    {
+        get; init;
+    }
     public string[] Restrictions { get; init; } = [];
     public DateTime? CreatedAtUtc
     {
         get; init;
     }
 }
+

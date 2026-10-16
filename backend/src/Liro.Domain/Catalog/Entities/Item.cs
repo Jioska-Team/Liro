@@ -11,6 +11,11 @@ public sealed class Item : IHasDomainEvents
     {
         get; private set;
     }
+    public CatalogItemType ItemType { get; private set; } = CatalogItemType.Asset;
+    public int? BundleTypeId
+    {
+        get; private set;
+    }
     public long RobloxAssetId
     {
         get; private set;
@@ -96,13 +101,14 @@ public sealed class Item : IHasDomainEvents
     {
     }
 
-    public Item(long robloxAssetId, string name, Guid? collectibleItemId = null, ItemMarketStatus marketStatus = ItemMarketStatus.Unknown)
+    public Item(long robloxAssetId, string name, Guid? collectibleItemId = null, ItemMarketStatus marketStatus = ItemMarketStatus.Unknown, CatalogItemType itemType = CatalogItemType.Asset)
     {
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(robloxAssetId);
+        new CatalogItemKey(robloxAssetId, itemType).Validate();
+        ItemType = itemType;
         Validate(name, collectibleItemId, marketStatus);
         Id = Guid.NewGuid();
         RobloxAssetId = robloxAssetId;
-        MarketplaceUrl = "https://www.roblox.com/catalog/" + robloxAssetId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        MarketplaceUrl = "https://www.roblox.com/" + (itemType == CatalogItemType.Bundle ? "bundles/" : "catalog/") + robloxAssetId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         Name = name.Trim();
         CollectibleItemId = collectibleItemId;
         MarketStatus = marketStatus;
@@ -170,7 +176,7 @@ public sealed class Item : IHasDomainEvents
     public void UpdateDetails(ItemCatalogDetails details)
     {
         ArgumentNullException.ThrowIfNull(details);
-        if (details.CreatorId <= 0 || details.AssetTypeId <= 0
+        if (details.CreatorId <= 0 || details.AssetTypeId <= 0 || details.BundleTypeId <= 0
             || details.CreatedAtUtc is { Kind: not DateTimeKind.Utc }
             || details.Restrictions.Any(string.IsNullOrWhiteSpace))
         {
@@ -187,7 +193,7 @@ public sealed class Item : IHasDomainEvents
         var restrictions = details.Restrictions.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         var changed = Description != details.Description || CreatorId != details.CreatorId
             || CreatorType != details.CreatorType || CreatorName != details.CreatorName
-            || AssetTypeId != details.AssetTypeId || !Restrictions.SequenceEqual(restrictions)
+            || AssetTypeId != details.AssetTypeId || BundleTypeId != details.BundleTypeId || !Restrictions.SequenceEqual(restrictions)
             || RobloxCreatedAtUtc != createdAtUtc
             || RobloxUpdatedAtUtc != updatedAtUtc;
         Description = details.Description;
@@ -195,6 +201,7 @@ public sealed class Item : IHasDomainEvents
         CreatorType = details.CreatorType;
         CreatorName = details.CreatorName;
         AssetTypeId = details.AssetTypeId;
+        BundleTypeId = details.BundleTypeId;
         Restrictions = restrictions;
         RobloxCreatedAtUtc = createdAtUtc;
         RobloxUpdatedAtUtc = updatedAtUtc;
@@ -247,3 +254,4 @@ public sealed class Item : IHasDomainEvents
         }
     }
 }
+
