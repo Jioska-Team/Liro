@@ -50,13 +50,13 @@ internal static class WorkerTests
             using var provider = CreateProvider(repository, new RecoveringDiscovery(), new CatalogStub());
             using var worker = new CatalogBootstrapWorker(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<CatalogBootstrapWorker>.Instance,
                 Options.Create(new CatalogWorkerOptions { RetryDelay = TimeSpan.FromMilliseconds(10), PageDelay = TimeSpan.Zero, ItemDelay = TimeSpan.FromHours(1) }),
-                Options.Create(new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], SearchScopes = [CatalogSearchScope.All] }));
+                Options.Create(new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], CoverageAdditionalFiltersEnabled = false, SearchScopes = [CatalogSearchScope.All] }));
             await RunToCompletionAsync(worker);
             Check.That(repository.Saves == 0, "Bootstrap modified an existing item");
         });
         suite.AsyncTest("Recent discovery polls newest page before saved backlog and isolates scopes", async () =>
         {
-            var config = new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [] };
+            var config = new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], CoverageAdditionalFiltersEnabled = false };
             var checkpoints = new ScopedCheckpoints();
             foreach (var scope in config.SearchScopes)
             {
@@ -87,7 +87,7 @@ internal static class WorkerTests
             services.AddSingleton<ICatalogCheckpointStore>(checkpoints);
             services.AddSingleton<IRobloxCatalogDiscoveryClient>(discovery);
             using var provider = services.BuildServiceProvider();
-            var config = new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [] };
+            var config = new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], CoverageAdditionalFiltersEnabled = false };
             using var worker = new CatalogBootstrapWorker(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<CatalogBootstrapWorker>.Instance,
                 Options.Create(new CatalogWorkerOptions { PageDelay = TimeSpan.Zero }), Options.Create(config));
             await RunToCompletionAsync(worker);
@@ -145,7 +145,7 @@ internal static class WorkerTests
             ItemDelay = TimeSpan.Zero,
             PageDelay = TimeSpan.Zero
         }),
-        Options.Create(new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], SearchScopes = [Liro.Application.RobloxIntegration.Models.CatalogSearchScope.All] }));
+        Options.Create(new RobloxCatalogOptions { CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], CoverageAdditionalFiltersEnabled = false, SearchScopes = [Liro.Application.RobloxIntegration.Models.CatalogSearchScope.All] }));
 
     private static async Task RunToCompletionAsync(CatalogBootstrapWorker worker)
     {

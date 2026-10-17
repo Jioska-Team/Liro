@@ -12,6 +12,21 @@ public sealed class Item : IHasDomainEvents
         get; private set;
     }
     public CatalogItemType ItemType { get; private set; } = CatalogItemType.Asset;
+    // Durable provider references also retain components that have not been imported yet.
+    public long[] BundleComponentAssetIds { get; private set; } = [];
+    public DateTime? BundleComponentsObservedAtUtc { get; private set; }
+
+    public bool UpdateBundleComponents(IEnumerable<long> assetIds, DateTime observedAtUtc)
+    {
+        if (ItemType != CatalogItemType.Bundle || observedAtUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("Bundle components require a bundle and UTC observation time.");
+        var ids = assetIds.Distinct().Order().ToArray();
+        if (ids.Any(id => id <= 0) || ids.Length > 1000) throw new ArgumentException("Invalid component IDs.");
+        if (BundleComponentsObservedAtUtc is { } previous && observedAtUtc <= previous) return false;
+        BundleComponentAssetIds = ids;
+        BundleComponentsObservedAtUtc = observedAtUtc;
+        return true;
+    }
     public int? BundleTypeId
     {
         get; private set;
@@ -72,6 +87,13 @@ public sealed class Item : IHasDomainEvents
     public DateTime? ThumbnailUpdatedAt
     {
         get; private set;
+    }
+    public DateTime? ThumbnailCheckedAtUtc { get; private set; }
+
+    public void MarkThumbnailChecked(DateTime now)
+    {
+        if (now.Kind != DateTimeKind.Utc) throw new ArgumentException("UTC required.", nameof(now));
+        ThumbnailCheckedAtUtc = now;
     }
     public DateTime FirstSeenAt
     {
@@ -173,7 +195,7 @@ public sealed class Item : IHasDomainEvents
 
     public void ClearDomainEvents() => _domainEvents.Clear();
 
-    public void UpdateDetails(ItemCatalogDetails details)
+    public bool UpdateDetails(ItemCatalogDetails details)
     {
         ArgumentNullException.ThrowIfNull(details);
         if (details.CreatorId <= 0 || details.AssetTypeId <= 0 || details.BundleTypeId <= 0
@@ -209,6 +231,7 @@ public sealed class Item : IHasDomainEvents
         {
             LastUpdatedAt = DateTime.UtcNow;
         }
+        return changed;
     }
 
     public void ObserveMarket(ItemMarketData data, DateTime observedAtUtc, string source)

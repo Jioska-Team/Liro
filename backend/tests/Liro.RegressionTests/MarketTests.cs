@@ -288,6 +288,30 @@ internal static class MarketTests
                 Check.That(remote.Details!.CreatedAtUtc == DateTime.Parse("2024-01-17T19:37:46.953Z").ToUniversalTime(), "Remote dates wrong");
             });
         }
+        suite.AsyncTest("Negative Roblox favorite count preserves Satyr Face item as unknown count", async () =>
+        {
+            const string payload = """{"data":[{"id":112941869919660,"itemType":"Asset","assetType":78,"name":"Satyr Face - Mood","itemRestrictions":[],"creatorType":"User","creatorTargetId":1,"creatorName":"Roblox","favoriteCount":-7,"isOffSale":true,"itemCreatedUtc":"2026-03-06T02:47:44.366Z"}]}""";
+            using var http = new HttpClient(new StubHttp(request =>
+            {
+                using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                Check.That(body.RootElement.GetProperty("items")[0].GetProperty("id").GetInt64() == 112941869919660, "Wrong requested identity");
+                return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(payload) };
+            })) { BaseAddress = new("https://catalog.roblox.com/") };
+            var client = new RobloxCatalogClient(http);
+            var remote = (await client.GetItemAsync(112941869919660))!;
+            Check.That(remote.Name == "Satyr Face - Mood" && remote.Details!.CreatorId == 1 && remote.Details.AssetTypeId == 78, "Valid item metadata was lost");
+            Check.That(remote.Market!.FavoriteCount is null && remote.Market.IsOffSale == true, "Invalid favorite count was accepted or fabricated as zero");
+            var key = new CatalogItemKey(112941869919660);
+            var batch = await client.GetItemsAsync([key]);
+            Check.That(batch[key].Error is null && batch[key].Item!.Market!.FavoriteCount is null, "Batch still rejects negative favorites");
+        });
+        suite.AsyncTest("Zero favorite count remains known while negative prices remain invalid", async () =>
+        {
+            using var valid = CreateHttp("""{"data":[{"id":1,"itemType":"Asset","name":"Item","itemRestrictions":[],"favoriteCount":0}]}""");
+            Check.That((await new RobloxCatalogClient(valid).GetItemAsync(1))!.Market!.FavoriteCount == 0, "Zero favorite count lost");
+            using var invalid = CreateHttp("""{"data":[{"id":1,"itemType":"Asset","name":"Item","itemRestrictions":[],"favoriteCount":-7,"price":-1}]}""");
+            await Check.ThrowsAsync<JsonException>(() => new RobloxCatalogClient(invalid).GetItemAsync(1));
+        });
         suite.AsyncTest("Catalog accepts numeric enums and keeps missing market fields null", async () =>
         {
             using var http = CreateHttp("""{"data":[{"id":1,"itemType":1,"name":"Item","creatorType":2,"itemRestrictions":[2,9]}]}""");

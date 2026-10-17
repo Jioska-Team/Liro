@@ -15,15 +15,23 @@ public sealed class CatalogRefreshWorker(IServiceScopeFactory scopeFactory, ILog
             return;
         }
 
+        var nextMetricsAt = DateTime.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
-                var now = DateTime.UtcNow;
-                var retryIds = await scope.ServiceProvider.GetRequiredService<ICatalogImportFailureStore>().GetDueItemsAsync(now, options.BatchSize, stoppingToken);
-                var staleIds = await scope.ServiceProvider.GetRequiredService<IItemRepository>().GetStaleItemsAsync(now, options.BatchSize, stoppingToken);
-                await CatalogBatchProcessor.ProcessAsync(scopeFactory, retryIds.Concat(staleIds), false, options, stoppingToken);
+                var processed = await CatalogRefreshCycle.RunAsync(scopeFactory, options, logger, stoppingToken);
+                if (DateTime.UtcNow >= nextMetricsAt)
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var now = DateTime.UtcNow;
+                    var health = await scope.ServiceProvider.GetRequiredService<ICatalogPriorityQueue>().GetHealthAsync(now, stoppingToken);
+                    logger.LogInformation("Catalog queue health. PriorityPending: {PriorityPending}, OldestDetectionUtc: {OldestDetectionUtc}, Overdue: {Overdue}, OldestDueUtc: {OldestDueUtc}",
+                        health.Pending, health.OldestDetectedAtUtc, health.Overdue, health.OldestDueAtUtc);
+                    nextMetricsAt = now.AddMinutes(1);
+                }
+                if (processed == 0) await Task.Delay(options.RefreshIdleDelay, stoppingToken);
+                continue;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -39,7 +47,7 @@ public sealed class CatalogRefreshWorker(IServiceScopeFactory scopeFactory, ILog
                 logger.LogWarning(exception, "Catalog refresh database cycle failed; next cycle will retry.");
             }
 
-            await Task.Delay(options.CycleInterval, stoppingToken);
+            await Task.Delay(options.RetryDelay, stoppingToken);
         }
     }
 }

@@ -12,6 +12,50 @@ internal static class RobloxTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("El diagnostico identifica el proceso sin registrar parametros ni secretos", async () =>
+        {
+            var logger = new TrafficLogger();
+            using var gate = new RobloxRequestGate(Microsoft.Extensions.Options.Options.Create(new RobloxRequestOptions { MinimumInterval = TimeSpan.Zero }), TimeProvider.System, logger);
+            using var operation = RobloxRequestPriority.Operation("búsquedas complementarias");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://catalog.roblox.com/v2/search/items/details?Cursor=secreto-cursor");
+            request.Headers.Authorization = new("Bearer", "secreto-token");
+            using var response = await gate.SendAsync(_ =>
+            {
+                var result = new HttpResponseMessage(HttpStatusCode.OK);
+                result.Headers.TryAddWithoutValidation("x-ratelimit-remaining", "2");
+                result.Headers.TryAddWithoutValidation("Set-Cookie", "secreto-cookie");
+                return Task.FromResult(result);
+            }, default, request);
+            var log = string.Join(" ", logger.Messages);
+            Check.That(log.Contains("búsquedas complementarias") && log.Contains("estado 200") && log.Contains("restante 2") && !log.Contains("secreto"), "Falta contexto de la respuesta o se filtraron secretos");
+        });
+        suite.AsyncTest("El presupuesto de busquedas conserva capacidad para conocidos", async () =>
+        {
+            var global = new CountingBudget();
+            var searches = new CountingBudget { Delay = TimeSpan.FromSeconds(10) };
+            using var gate = new RobloxRequestGate(Microsoft.Extensions.Options.Options.Create(new RobloxRequestOptions { MinimumInterval = TimeSpan.Zero }),
+                TimeProvider.System, NullLogger<RobloxRequestGate>.Instance, global, new(searches));
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://catalog.roblox.com/v2/search/items/details?Cursor=privado");
+            var sent = 0;
+            await Check.ThrowsAsync<RobloxRateLimitedException>(() => gate.SendAsync(_ => { sent++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default, request));
+            using var known = new HttpRequestMessage(HttpMethod.Post, "https://catalog.roblox.com/v1/catalog/items/details");
+            using var response = await gate.SendAsync(_ => { sent++; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default, known);
+            Check.That(sent == 1 && searches.Calls == 1 && searches.Completions == 0 && global.Calls == 1 && global.Completions == 1,
+                "La busqueda sin cupo envio trafico, consumio presupuesto global o bloqueo conocidos");
+        });
+        suite.AsyncTest("Cada intento de busqueda cierra ambos presupuestos incluso al fallar", async () =>
+        {
+            foreach (var fail in new[] { false, true })
+            {
+                var global = new CountingBudget(); var searches = new CountingBudget();
+                using var gate = new RobloxRequestGate(Microsoft.Extensions.Options.Options.Create(new RobloxRequestOptions { MinimumInterval = TimeSpan.Zero }),
+                    TimeProvider.System, NullLogger<RobloxRequestGate>.Instance, global, new(searches));
+                using var request = new HttpRequestMessage(HttpMethod.Get, "https://catalog.roblox.com/v2/search/items/details");
+                try { using var response = await gate.SendAsync(_ => fail ? throw new HttpRequestException("simulado") : Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)), default, request); }
+                catch (HttpRequestException) when (fail) { }
+                Check.That(global.Calls == 1 && global.Completions == 1 && searches.Calls == 1 && searches.Completions == 1, "Una reserva no se contabilizo o no se cerro");
+            }
+        });
         suite.AsyncTest("Discovery preserves HTTP failure status", async () =>
         {
             using var http = new HttpClient(new StubHttp(_ => new(HttpStatusCode.InternalServerError)))
@@ -76,6 +120,11 @@ internal static class RobloxTests
                 options.Retry.UseJitter = false;
             }));
             Liro.Infrastructure.DependencyInjection.AddInfrastructure(builder);
+            Check.That(builder.Services.Any(x => x.ServiceType == typeof(IRobloxRequestBudget) && x.ImplementationType == typeof(RedisRobloxRequestBudget)
+                && x.Lifetime == ServiceLifetime.Singleton), "Falta el presupuesto global en producción");
+            var budget = new CountingBudget();
+            builder.Services.AddSingleton<IRobloxRequestBudget>(budget);
+            builder.Services.AddSingleton(new RobloxSearchBudget(new CountingBudget()));
             builder.Services.ConfigureAll<Microsoft.Extensions.Http.HttpClientFactoryOptions>(options => options.HttpMessageHandlerBuilderActions.Add(http => http.PrimaryHandler = new StubHttp(_ =>
             {
                 Interlocked.Increment(ref calls);
@@ -86,7 +135,7 @@ internal static class RobloxTests
             using var provider = builder.Services.BuildServiceProvider();
             await Check.ThrowsAsync<RobloxRateLimitedException>(() => provider.GetRequiredService<IRobloxCatalogClient>().GetItemAsync(1));
             await Check.ThrowsAsync<RobloxRateLimitedException>(() => provider.GetRequiredService<IRobloxCatalogDiscoveryClient>().GetCatalogPageAsync());
-            Check.That(calls == 1, $"Sent {calls} HTTP requests despite provider cooldown");
+            Check.That(calls == 1 && budget.Calls == 1, $"Sent {calls} HTTP requests despite provider cooldown");
         });
         suite.AsyncTest("Rate limiting is not recorded as a defective asset", async () =>
         {
@@ -205,5 +254,21 @@ internal static class RobloxTests
             }
         });
     }
+    private sealed class CountingBudget : IRobloxRequestBudget
+    {
+        public int Calls;
+        public int Completions;
+        public TimeSpan Delay;
+        public Task CompleteAsync(string reservationId, CancellationToken ct) { Completions++; return Task.CompletedTask; }
+        public Task<TimeSpan> TryAcquireAsync(string reservationId, CancellationToken ct) { Calls++; return Task.FromResult(Delay); }
+    }
+    private sealed class TrafficLogger : Microsoft.Extensions.Logging.ILogger<RobloxRequestGate>
+    {
+        public List<string> Messages { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel level) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel level, Microsoft.Extensions.Logging.EventId id, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Messages.Add(formatter(state, exception));
+    }
 }
+
 

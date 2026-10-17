@@ -16,11 +16,14 @@ public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator
 {
     public const string ButtonId = "liro:development:ensure-ready:v1";
 
+    public const string StopButtonId = "liro:development:stop:v1";
+    public const string StatusButtonId = "liro:development:status:v1";
+
     public bool IsAuthorized(ButtonRequest request)
     {
         var allowed = request.GuildId == options.GuildId && request.ChannelId == options.ChannelId
             && options.PanelMessageId != 0 && request.MessageId == options.PanelMessageId
-            && request.CustomId == ButtonId && request.RoleIds.Contains(options.RoleId);
+            && (request.CustomId is ButtonId or StopButtonId or StatusButtonId) && request.RoleIds.Contains(options.RoleId);
         return allowed;
     }
 
@@ -36,19 +39,34 @@ public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator
         return true;
     }
 
-    public async Task CompleteAsync(IButtonReply reply, CancellationToken cancellationToken)
+    public Task CompleteAsync(IButtonReply reply, CancellationToken cancellationToken) => CompleteAsync(ButtonId, reply, cancellationToken);
+
+    public async Task CompleteAsync(string action, IButtonReply reply, CancellationToken cancellationToken)
     {
         try
         {
-            var result = await startup.EnsureReadyAsync(cancellationToken);
+            var result = action switch
+            {
+                ButtonId => await startup.RestartAsync(cancellationToken),
+                StopButtonId => await startup.StopAsync(cancellationToken),
+                StatusButtonId => await startup.GetStatusAsync(cancellationToken),
+                _ => throw new InvalidOperationException("Accion no reconocida.")
+            };
             var message = result.Status switch
             {
-                StartupStatus.Ready => $"Comprobar API: {new Uri(result.ApiBaseUri!, "api/lan/ready")}\nURL base para Angular: `{result.ApiBaseUri}`\nConsultar item: `{new Uri(result.ApiBaseUri!, "api/v1/items/by-asset/")}ASSET_ID`\nAcceso solo desde la misma red local. La raiz / no es una pagina web.",
+                StartupStatus.Ready => $"🟢 Backend activo; API lista.\nComprobar API: {new Uri(result.ApiBaseUri!, "api/lan/ready")}\nURL base para Angular: `{result.ApiBaseUri}`\nConsultar item: `{new Uri(result.ApiBaseUri!, "api/v1/items/by-asset/")}ASSET_ID`\nAcceso solo desde la misma red local. La raiz / no es una pagina web.",
+                StartupStatus.Stopped => "⚫ Backend detenido. Docker Desktop permanece disponible.",
+                StartupStatus.Busy => "Ya hay una operacion en curso. Espera a que termine y vuelve a intentarlo.",
+                StartupStatus.Starting => "🟡 Backend iniciando; la API todavia no esta lista.",
+                StartupStatus.Restarting => "🟡 Backend reiniciando.",
+                StartupStatus.Stopping => "🟡 Backend deteniendose.",
+                StartupStatus.Unhealthy => "🟠 AppHost activo, pero la API no responde como lista.",
+                StartupStatus.Unknown => "No se pudo verificar el estado. Revisa el equipo anfitrion.",
                 StartupStatus.NetworkChanged => "La red cambio durante el arranque. Revisa la configuracion LAN y el firewall local.",
-                StartupStatus.TimedOut => "Se agoto el tiempo de arranque. Revisa Docker Desktop y Liro en el equipo anfitrion.",
+                StartupStatus.TimedOut => "Se agoto el tiempo de la operacion. Revisa Docker Desktop y Liro en el equipo anfitrion.",
                 StartupStatus.DockerUnavailable => "Docker Desktop no esta disponible. Revisa el motor local.",
                 StartupStatus.AppHostUnavailable => "Liro no esta listo o ya existe una instancia incompatible. Revisa el equipo anfitrion.",
-                _ => "No se pudo iniciar. Revisa la configuracion local del agente, Docker y la regla LAN."
+                _ => "No se pudo completar la operacion. Revisa la configuracion local del agente, Docker y la regla LAN."
             };
             await reply.CompleteAsync(message);
         }

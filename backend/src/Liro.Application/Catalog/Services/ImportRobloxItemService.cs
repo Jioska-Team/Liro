@@ -23,7 +23,7 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
         var outcome = await ApplyWithOutcomeAsync(key, remote, onlyNew, cancellationToken);
         return outcome.Item;
     }
-    public async Task<CatalogImportOutcome> ApplyWithOutcomeAsync(CatalogItemKey key, RobloxCatalogItem? remote, bool onlyNew, CancellationToken cancellationToken = default)
+    public async Task<CatalogImportOutcome> ApplyWithOutcomeAsync(CatalogItemKey key, RobloxCatalogItem? remote, bool onlyNew, CancellationToken cancellationToken = default, bool refreshThumbnail = true)
     {
         key.Validate();
         var existing = await itemRepository.GetByCatalogIdAsync(key, cancellationToken);
@@ -50,7 +50,10 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
         var details = remote.Details;
         var knownOtherCreator = (details?.CreatorId is > 0 and not 1)
             || string.Equals(details?.CreatorType, "Group", StringComparison.OrdinalIgnoreCase);
-        if (knownOtherCreator)
+        var confirmedComponent = knownOtherCreator && details?.CreatorId > 0
+            && details.CreatorType is "User" or "Group"
+            && await itemRepository.IsOfficialBundleComponentAsync(key, cancellationToken);
+        if (knownOtherCreator && !confirmedComponent)
         {
             if (existing is not null)
             {
@@ -60,20 +63,34 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
             logger.LogInformation("Excluded asset {AssetId}: creator is not the official Roblox user.", key);
             return new CatalogImportOutcome(null, false);
         }
-        if (details?.CreatorId != 1 || !string.Equals(details.CreatorType, "User", StringComparison.OrdinalIgnoreCase))
+        if (!confirmedComponent && (details?.CreatorId != 1 || !string.Equals(details.CreatorType, "User", StringComparison.OrdinalIgnoreCase)))
         {
             throw new JsonException("Catalog creator identity is missing; cannot confirm the official Roblox user.");
         }
 
+        var fromSearch = remote.Source == "RobloxCatalogSearchV2";
+        // A slower search response must not overwrite a newer completed refresh.
+        if (fromSearch && existing?.LastCheckedAt is { } checkedAt && remote.ObservedAtUtc < checkedAt)
+            return new CatalogImportOutcome(existing, false);
         var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ItemType);
+        var catalogChanged = existing is null;
         if (existing is not null)
         {
-            item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus);
+            catalogChanged = item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus);
         }
 
         if (remote.Details is not null)
         {
-            item.UpdateDetails(remote.Details);
+            catalogChanged |= item.UpdateDetails(remote.Details);
+        }
+        if (remote.BundleComponentAssetIds is { } components)
+            catalogChanged |= item.UpdateBundleComponents(components, remote.ObservedAtUtc);
+
+        if (fromSearch && existing is not null && !catalogChanged
+            && (remote.Market is null || item.MarketState?.Data == remote.Market))
+        {
+            await failures.ResolveAsync(key, cancellationToken);
+            return new CatalogImportOutcome(item, false);
         }
 
         if (remote.Market is not null)
@@ -81,25 +98,29 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
             item.ObserveMarket(remote.Market, remote.ObservedAtUtc, remote.Source);
         }
 
-        try
+        if (refreshThumbnail && refreshPolicy.ShouldRefreshThumbnail(item, DateTime.UtcNow))
         {
-            item.UpdateThumbnail(await robloxThumbnailClient.GetThumbnailAsync(key, cancellationToken));
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (HttpRequestException exception)
-        {
-            logger.LogWarning(exception, "Thumbnail unavailable for {AssetId}; retaining catalog data.", key);
-        }
-        catch (JsonException exception)
-        {
-            logger.LogWarning(exception, "Invalid thumbnail response for {AssetId}.", key);
-        }
-        catch (OperationCanceledException exception)
-        {
-            logger.LogWarning(exception, "Thumbnail timed out for {AssetId}.", key);
+            item.MarkThumbnailChecked(DateTime.UtcNow);
+            try
+            {
+                item.UpdateThumbnail(await robloxThumbnailClient.GetThumbnailAsync(key, cancellationToken));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (HttpRequestException exception)
+            {
+                logger.LogWarning(exception, "Thumbnail unavailable for {AssetId}; retaining catalog data.", key);
+            }
+            catch (JsonException exception)
+            {
+                logger.LogWarning(exception, "Invalid thumbnail response for {AssetId}.", key);
+            }
+            catch (OperationCanceledException exception)
+            {
+                logger.LogWarning(exception, "Thumbnail timed out for {AssetId}.", key);
+            }
         }
 
         item.MarkChecked(DateTime.UtcNow, refreshPolicy.Interval);
@@ -121,6 +142,7 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
         return item;
     }
 }
+
 
 
 

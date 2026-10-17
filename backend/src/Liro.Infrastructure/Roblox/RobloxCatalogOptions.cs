@@ -18,6 +18,7 @@ public sealed class RobloxCatalogOptions
     public int[] CoverageBundleTypeIds { get; set; } = [1, 2, 3, 4];
     public string[] CoverageKeywords { get; set; } = ["valkyrie"];
     public int CoverageMaxPartitions { get; set; } = 512;
+    public bool CoverageAdditionalFiltersEnabled { get; set; } = true;
     public int CoverageMaxDepth { get; set; } = 12;
     public int CoverageResultLimit { get; set; } = 1000;
     public string CoverageScopeKey => "catalog:coverage:v1:" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ScopeKey)))[..16];

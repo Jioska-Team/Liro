@@ -22,6 +22,20 @@ internal static class BundleTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("Un componente externo requiere una referencia de paquete oficial y conserva su creador", async () =>
+        {
+            foreach (var referenced in new[] { false, true })
+            {
+                var repository = new TypedRepository { OfficialComponent = referenced };
+                using var http = Http(_ => throw new Exception("No se debe consultar el catálogo"));
+                var importer = new ImportRobloxItemService(new RobloxCatalogClient(http), repository, new TypedThumbnail(), NullLogger<ImportRobloxItemService>.Instance, new TypedFailures(), new CatalogRefreshPolicy());
+                var remote = new RobloxCatalogItem(16744204409, "Bold Climb", null, ItemMarketStatus.Normal)
+                { Details = new() { CreatorId = 5184673798, CreatorType = "User", AssetTypeId = 48 }, ObservedAtUtc = DateTime.UtcNow };
+                var result = await importer.ApplyWithOutcomeAsync(new(16744204409), remote, false, default, refreshThumbnail: false);
+                Check.That((result.Item is not null) == referenced, "Se aceptó un creador externo sin referencia o se descartó un componente confirmado");
+                if (referenced) Check.That(result.Item!.CreatorId == 5184673798 && repository.Items.Count == 1, "Se alteró el creador o se duplicó el componente");
+            }
+        });
         suite.Test("Bundle identity preserves asset URL and exposes distinct API identity", () =>
         {
             var asset = new Item(126, "Asset");
@@ -143,6 +157,8 @@ internal static class BundleTests
     }
     private sealed class TypedRepository : IItemRepository
     {
+        public bool OfficialComponent;
+        public Task<bool> IsOfficialBundleComponentAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(OfficialComponent && key.Type == CatalogItemType.Asset);
         public Dictionary<CatalogItemKey, Item> Items = [];
         public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(Items.GetValueOrDefault(key));
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Items.Values.FirstOrDefault(x => x.Id == id));

@@ -11,6 +11,19 @@ internal static class LanAccessTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("La red local permite leer paquetes y componentes pero bloquea escritura y rutas parecidas", async () =>
+        {
+            foreach (var path in new[] { "/api/v1/catalog", "/api/v1/catalog/bundles/1/components", "/api/v1/catalog/assets/1/bundles" })
+            {
+                var called = false;
+                await Access().InvokeAsync(Context("192.168.50.20", path), _ => { called = true; return Task.CompletedTask; });
+                Check.That(called, "Lectura bloqueada");
+                var write = Context("192.168.50.20", path);
+                write.Request.Method = "POST";
+                await VerifyDenied(write);
+            }
+            await VerifyDenied(Context("192.168.50.20", "/api/v1/catalog-other"));
+        });
         suite.Test("LAN access is disabled by default", () =>
         {
             var access = DevelopmentLanAccess.Create(new ConfigurationBuilder().Build(), "Production");

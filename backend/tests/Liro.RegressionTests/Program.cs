@@ -1,7 +1,17 @@
 using Liro.RegressionTests;
 
 var suite = new RegressionSuite();
+KnownWatchOrderingTests.Register(suite);
+GlobalBudgetTests.Register(suite);
+MainScanPriorityTests.Register(suite);
+RequestOptimizationTests.Register(suite);
+ComponentRecoveryTests.Register(suite);
+BundleRelationTests.Register(suite);
+LimitedCoverageTests.Register(suite);
 CatalogTests.Register(suite);
+PriorityRefreshTests.Register(suite);
+SearchDetailsTests.Register(suite);
+DatabaseBatchTests.Register(suite);
 BundleTests.Register(suite);
 BatchTests.Register(suite);
 CoverageTests.Register(suite);

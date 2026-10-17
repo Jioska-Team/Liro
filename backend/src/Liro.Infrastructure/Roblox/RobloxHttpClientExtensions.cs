@@ -15,8 +15,9 @@ public static class RobloxHttpClientExtensions
         client.AddHttpMessageHandler<RobloxThrottleHandler>();
         client.AddStandardResilienceHandler(options =>
         {
-            var retry = options.Retry.ShouldHandle;
-            options.Retry.ShouldHandle = args => args.Outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests ? ValueTask.FromResult(false) : retry(args);
+            // Retry at the durable worker/client boundary so each attempt re-enters the gate
+            // and the global budget. An inner retry would send unaccounted HTTP requests.
+            options.Retry.ShouldHandle = _ => ValueTask.FromResult(false);
             var circuit = options.CircuitBreaker.ShouldHandle;
             options.CircuitBreaker.ShouldHandle = args => args.Outcome.Result?.StatusCode == HttpStatusCode.TooManyRequests ? ValueTask.FromResult(false) : circuit(args);
         });

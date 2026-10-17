@@ -8,9 +8,26 @@ using Liro.Domain.Catalog.Models;
 
 namespace Liro.Infrastructure.Roblox;
 
-public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogClient
+public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSession? session = null,
+    Microsoft.Extensions.Logging.ILogger<RobloxCatalogClient>? logger = null) : IRobloxCatalogClient
 {
+    private readonly RobloxCatalogSession tokenState = session ?? new(TimeProvider.System);
     public async Task<RobloxCatalogItem?> GetItemAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
+    {
+        key.Validate();
+        return session is null ? await GetItemCachedAsync(key, cancellationToken)
+            : await session.ShareAsync($"item:{key.Type}:{key.Id}", token => GetItemCachedAsync(key, token), cancellationToken);
+    }
+    private async Task<RobloxCatalogItem?> GetItemCachedAsync(CatalogItemKey key, CancellationToken cancellationToken)
+    {
+        key.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (session?.Find(key) is { } cached) return cached;
+        var item = await GetSingleCoreAsync(key, cancellationToken);
+        if (item is not null) session?.Store(item);
+        return item;
+    }
+    private async Task<RobloxCatalogItem?> GetSingleCoreAsync(CatalogItemKey key, CancellationToken cancellationToken)
     {
         key.Validate();
         var observedAtUtc = DateTime.UtcNow;
@@ -47,6 +64,38 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
         return item;
     }
     public async Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetItemsAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken = default)
+    {
+        var unique = keys.Distinct().OrderBy(k => k.Type).ThenBy(k => k.Id).ToArray();
+        if (unique.Length > 100) throw new ArgumentOutOfRangeException(nameof(keys));
+        foreach (var key in unique) key.Validate();
+        return session is null ? await GetItemsCachedAsync(unique, cancellationToken)
+            : await session.ShareAsync("batch:" + string.Join(",", unique.Select(k => $"{k.Type}:{k.Id}")),
+                token => GetItemsCachedAsync(unique, token), cancellationToken);
+    }
+    private async Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetItemsCachedAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken)
+    {
+        var unique = keys.Distinct().ToArray();
+        if (unique.Length > 100) throw new ArgumentOutOfRangeException(nameof(keys));
+        foreach (var key in unique) key.Validate();
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = new Dictionary<CatalogItemKey, RobloxCatalogResult>();
+        foreach (var key in unique) if (session?.Find(key) is { } cached) result[key] = new(cached, null);
+        var reused = result.Count;
+        var missing = unique.Where(key => !result.ContainsKey(key)).ToArray();
+        if (missing.Length > 0)
+        {
+            var fetched = await GetBatchCoreAsync(missing, cancellationToken);
+            foreach (var pair in fetched)
+            {
+                result[pair.Key] = pair.Value;
+                if (pair.Value.Error is null && pair.Value.Item is { } item) session?.Store(item);
+            }
+        }
+        if (reused > 0 && logger is not null) Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(logger,
+            "Detalles recientes reutilizados: {Reused}; identificadores enviados a Roblox: {Requested}.", reused, missing.Length);
+        return result;
+    }
+    private async Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetBatchCoreAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken)
     {
         var unique = keys.Distinct().ToArray();
         if (unique.Length > 100)
@@ -117,23 +166,28 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
     }
     private async Task<HttpResponseMessage> GetDetailsResponseAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken)
     {
-        var response = await SendDetailsAsync(keys, null, cancellationToken);
+        var previousToken = tokenState.Token;
+        var response = await SendDetailsAsync(keys, previousToken, cancellationToken);
         if (response.StatusCode != HttpStatusCode.Forbidden
             || !response.Headers.TryGetValues("x-csrf-token", out var tokens))
         {
+            if (response.StatusCode == HttpStatusCode.Forbidden) tokenState.RejectToken(previousToken);
             return response;
         }
 
         var token = tokens.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(token))
         {
+            tokenState.RejectToken(previousToken);
             return response;
         }
 
         // Roblox challenges this public POST even without authentication. Retry only once,
         // through the same HTTP pipeline so pacing, cooldowns and cancellation still apply.
         response.Dispose();
+        tokenState.SetToken(token);
         var retryResponse = await SendDetailsAsync(keys, token, cancellationToken);
+        if (retryResponse.StatusCode == HttpStatusCode.Forbidden) tokenState.RejectToken(token);
         return retryResponse;
     }
 
@@ -151,7 +205,7 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
         var response = await httpClient.SendAsync(request, cancellationToken);
         return response;
     }
-    private static RobloxCatalogItem MapItem(JsonElement item, CatalogItemKey key, DateTime observedAtUtc)
+    internal static RobloxCatalogItem MapItem(JsonElement item, CatalogItemKey key, DateTime observedAtUtc)
     {
         try
         {
@@ -192,7 +246,8 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
                 PriceStatus = ReadString(item, "priceStatus"),
                 TotalQuantity = ReadNumber(item, "totalQuantity"),
                 UnitsAvailableForConsumption = ReadNumber(item, "unitsAvailableForConsumption"),
-                FavoriteCount = ReadNumber(item, "favoriteCount")
+                // Roblox can return a negative favorite counter; it is unavailable, not a negative count.
+                FavoriteCount = ReadNumber(item, "favoriteCount") is >= 0 and var favorites ? favorites : null
             };
             market.Validate();
             var status = restrictions.Contains("LimitedUnique", StringComparer.OrdinalIgnoreCase) ? ItemMarketStatus.LimitedUnique
@@ -201,6 +256,7 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
             var result = new RobloxCatalogItem(key.Id, name, collectibleId, status)
             {
                 ItemType = key.Type,
+                BundleComponentAssetIds = ReadBundleComponents(item, key),
                 Details = new ItemCatalogDetails
                 {
                     Description = ReadString(item, "description"),
@@ -222,6 +278,29 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
             throw new JsonException("Invalid catalog field value.", exception);
         }
     }
+    private static IReadOnlyList<long>? ReadBundleComponents(JsonElement item, CatalogItemKey key)
+    {
+        if (key.Type != CatalogItemType.Bundle || !item.TryGetProperty("bundledItems", out var components)
+            || components.ValueKind == JsonValueKind.Null) return null;
+        if (components.ValueKind != JsonValueKind.Array) throw new JsonException("Invalid bundle components.");
+        var ids = new HashSet<long>();
+        foreach (var component in components.EnumerateArray())
+        {
+            if (component.ValueKind != JsonValueKind.Object || !component.TryGetProperty("type", out var type))
+                throw new JsonException("Invalid bundle component type.");
+            // UserOutfit is a different namespace, never an item/component ID.
+            if (type.ValueKind == JsonValueKind.String && type.GetString() == "UserOutfit") continue;
+            if (!(type.ValueKind == JsonValueKind.String && type.GetString() == "Asset")
+                && !(type.ValueKind == JsonValueKind.Number && type.TryGetInt32(out var value) && value == 1))
+                throw new JsonException("Unsupported bundle component type.");
+            if (!component.TryGetProperty("id", out var id) || !id.TryGetInt64(out var number) || number <= 0)
+                throw new JsonException("Invalid bundle component ID.");
+            ids.Add(number);
+        }
+        if (ids.Count > 1000) throw new JsonException("Too many bundle components.");
+        return ids.Order().ToArray();
+    }
+
     private static string? ReadString(JsonElement item, string name)
     {
         var value = item.TryGetProperty(name, out var property) && property.ValueKind != JsonValueKind.Null ? property.GetString() : null;
@@ -281,6 +360,7 @@ public sealed class RobloxCatalogClient(HttpClient httpClient) : IRobloxCatalogC
         return value;
     }
 }
+
 
 
 

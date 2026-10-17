@@ -31,7 +31,7 @@ public sealed class CatalogImportProcessor(ImportRobloxItemService importer, IIt
         return true;
     }
 
-    public async Task<(bool Added, bool Failed)> ProcessResultAsync(CatalogItemKey key, RobloxCatalogResult result, bool onlyNew, CancellationToken cancellationToken)
+    public async Task<(bool Added, bool Failed)> ProcessResultAsync(CatalogItemKey key, RobloxCatalogResult result, bool onlyNew, CancellationToken cancellationToken, bool refreshThumbnail = true)
     {
         if (!await CanProcessAsync(key, onlyNew, cancellationToken))
         {
@@ -44,7 +44,7 @@ public sealed class CatalogImportProcessor(ImportRobloxItemService importer, IIt
             {
                 throw new JsonException(result.Error ?? "Item omitted from catalog response.");
             }
-            var outcome = await importer.ApplyWithOutcomeAsync(key, result.Item, onlyNew, cancellationToken);
+            var outcome = await importer.ApplyWithOutcomeAsync(key, result.Item, onlyNew, cancellationToken, refreshThumbnail);
             added = outcome.Added;
             return outcome.Item;
         }, cancellationToken);

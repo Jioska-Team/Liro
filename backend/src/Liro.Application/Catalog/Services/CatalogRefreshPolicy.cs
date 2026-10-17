@@ -5,13 +5,22 @@ namespace Liro.Application.Catalog.Services;
 
 public sealed class CatalogRefreshPolicy
 {
+    public TimeSpan ThumbnailInterval { get; }
+    public TimeSpan ThumbnailRetryInterval { get; } = TimeSpan.FromMinutes(15);
+
+    public bool ShouldRefreshThumbnail(Item item, DateTime now) =>
+        (item.ThumbnailCheckedAtUtc ?? item.ThumbnailUpdatedAt) is not { } last
+        || now - last >= (string.IsNullOrWhiteSpace(item.ThumbnailUrl) ? ThumbnailRetryInterval : ThumbnailInterval);
     public TimeSpan Interval
     {
         get;
     }
 
-    public CatalogRefreshPolicy(TimeSpan? interval = null)
+    public CatalogRefreshPolicy(TimeSpan? interval = null, TimeSpan? thumbnailInterval = null)
     {
+        ThumbnailInterval = thumbnailInterval ?? TimeSpan.FromDays(1);
+        if (ThumbnailInterval < TimeSpan.FromMinutes(15) || ThumbnailInterval > TimeSpan.FromDays(30))
+            throw new ArgumentOutOfRangeException(nameof(thumbnailInterval));
         Interval = interval ?? TimeSpan.FromMinutes(30);
         if (Interval < TimeSpan.FromMinutes(1) || Interval > TimeSpan.FromDays(1))
         {

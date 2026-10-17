@@ -109,6 +109,20 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
         }
     }
 
+    public async Task StopAppHostAsync(CancellationToken cancellationToken)
+    {
+        var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".aspire", "bin", "aspire.exe");
+        var result = await commands.RunAsync(executable, StopArguments(options.BackendPath), cancellationToken);
+        if (result.ExitCode != 0)
+        {
+            // CLI output can include credentials. Never forward it to Discord or logs.
+            throw new InvalidOperationException("Aspire no pudo detener el proyecto configurado.");
+        }
+    }
+
+    public static string[] StopArguments(string backendPath) =>
+        ["stop", "--apphost", Path.GetFullPath(Path.Combine(backendPath, "src", "Liro.AppHost", "Liro.AppHost.csproj")), "--non-interactive"];
+
     public async Task StartAppHostAsync(LanEndpoint endpoint, CancellationToken cancellationToken)
     {
         if (await GetAppHostStateAsync(cancellationToken) != AppHostState.Stopped)

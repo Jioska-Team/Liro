@@ -16,6 +16,23 @@ public sealed class CatalogDiscoveryWorker(IServiceScopeFactory scopeFactory, IL
         }
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (options.BoundedRecentDiscovery)
+            {
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    var result = await CatalogRecentWindow.ReadAsync(scope.ServiceProvider.GetRequiredService<IRobloxCatalogDiscoveryClient>(),
+                        Liro.Application.RobloxIntegration.Models.CatalogSearchScope.All, options.RecentItemLimit,
+                        async page => { await ImportPageAsync(page, options, stoppingToken); }, stoppingToken);
+                    logger.LogInformation("Recent item window completed. Limit: {Limit}, Pages: {Pages}, Observations: {Observations}, HitLimit: {HitLimit}",
+                        options.RecentItemLimit, result.Pages, result.Observations, result.HitLimit);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
+                catch (RobloxRateLimitedException exception) { await CatalogWorkerDelay.WaitForRateLimitAsync(exception, options.RetryDelay, logger, stoppingToken); }
+                catch (Exception exception) { logger.LogWarning(exception, "Recent item window failed; next cycle starts at the newest page."); }
+                await Task.Delay(options.CycleInterval, stoppingToken);
+                continue;
+            }
             foreach (var searchScope in catalog.Value.SearchScopes.Distinct())
             {
                 var key = catalog.Value.ScopeKey + ":recent:" + searchScope;
@@ -69,7 +86,7 @@ public sealed class CatalogDiscoveryWorker(IServiceScopeFactory scopeFactory, IL
     }
     private async Task ImportPageAsync(Liro.Application.RobloxIntegration.Models.RobloxCatalogDiscoveryPage page, CatalogWorkerOptions options, CancellationToken stoppingToken)
     {
-        await CatalogBatchProcessor.ProcessAsync(scopeFactory, page.Items, true, options, stoppingToken);
+        await CatalogSearchPageProcessor.ProcessAsync(scopeFactory, page, false, options, stoppingToken);
     }
 }
 

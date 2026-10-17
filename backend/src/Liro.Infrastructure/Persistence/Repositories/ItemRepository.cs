@@ -10,6 +10,10 @@ namespace Liro.Infrastructure.Persistence.Repositories;
 
 public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
 {
+    public Task<bool> IsOfficialBundleComponentAsync(CatalogItemKey key, CancellationToken cancellationToken = default) =>
+        key.Type != CatalogItemType.Asset ? Task.FromResult(false) : dbContext.Items.AnyAsync(b =>
+            b.ItemType == CatalogItemType.Bundle && b.CreatorId == 1 && b.CreatorType == "User"
+            && b.BundleComponentAssetIds.Contains(key.Id), cancellationToken);
     public async Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var item = await dbContext.Items

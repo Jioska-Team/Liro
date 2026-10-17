@@ -15,6 +15,71 @@ internal static class CoverageTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("Additional filters retain off-sale requests and independent cursors", async () =>
+        {
+            var options = SmallConfig();
+            options.CoverageAdditionalFiltersEnabled = true;
+            var roots = CatalogCoveragePlanner.Roots(options);
+            Check.That(roots.Select(x => x.Key).Distinct().Count() == roots.Count, "Root identities collide");
+            Check.That(new[] { 1, 2, 5, 7 }.All(c => roots.Any(x => x.CategoryFilter == c)), "Category missing");
+            Check.That(roots.Any(x => x.Scope == CatalogSearchScope.Premium) && roots.Any(x => x.Scope == CatalogSearchScope.TimedOptions), "Sales filter missing");
+            Check.That(new[] { 2, 4, 5 }.All(s => roots.Any(x => x.SortType == s && x.MinPrice is null && x.MaxPrice is null)), "Unpriced complementary traversal missing");
+            var expanded = CatalogCoveragePlanner.Expand(new(CatalogSearchScope.All) { AssetTypeId = 8 }, options);
+            Check.That(new[] { 1, 2, 3, 4, 5 }.All(s => expanded.Any(x => x.SortType == s && x.AssetTypeId == 8 && x.MinPrice is null)), "Truncated category lacks complementary sort");
+            foreach (var partition in roots)
+            {
+                using var http = new HttpClient(new StubHttp(request =>
+                {
+                    var query = request.RequestUri!.Query;
+                    Check.That(query.Contains("IncludeNotForSale=true") && query.Contains("CreatorTargetId=1") && query.Contains("SalesTypeFilter=" + (int)partition.Scope) && query.Contains("SortType=" + partition.SortType) && query.Contains("sortOrder=Desc") && query.Contains("Cursor=next%26page"), "Required request filter or cursor lost");
+                    if (partition.CategoryFilter is { } c) Check.That(query.Contains("CategoryFilter=" + c), "Category filter not sent");
+                    return new(HttpStatusCode.OK) { Content = new StringContent("""{"data":[],"nextPageCursor":null}""") };
+                })) { BaseAddress = new("https://catalog.roblox.com/") };
+                await new RobloxCatalogDiscoveryClient(http, Options.Create(options)).GetPartitionPageAsync(partition, "next&page", default);
+            }
+        });
+        suite.Test("Bundle replay leaves existing asset checkpoints intact", () =>
+        {
+            var asset = new CatalogSearchPartition(CatalogSearchScope.All) { AssetTypeId = 8 };
+            Check.That(asset.Key == "All:a8:b:p-:s0:knone", "Existing asset progress invalidated");
+            Check.That(new CatalogSearchPartition(CatalogSearchScope.All) { BundleTypeId = 1 }.Key.EndsWith(":components-v1"), "Completed bundles will not be revisited");
+            Check.That((asset with { CategoryFilter = 2 }).Key != asset.Key, "Category checkpoint reused another cursor");
+            var rejected = false;
+            try { (asset with { CategoryFilter = 8 }).Validate(); } catch (ArgumentException) { rejected = true; }
+            Check.That(rejected, "Unsupported category accepted");
+        });
+        suite.AsyncTest("Saturated All subdivisions run before unrelated collectible categories", async () =>
+        {
+            var config = SmallConfig();
+            config.SearchScopes = [CatalogSearchScope.All, CatalogSearchScope.Collectibles];
+            config.CoverageAssetTypeIds = [8];
+            var store = new Checkpoints();
+            store.States[Key(config, new(CatalogSearchScope.All))] = new(null, true) { CoverageStatus = "SearchExhausted" };
+            var hat = new CatalogSearchPartition(CatalogSearchScope.All) { AssetTypeId = 8 };
+            store.States[Key(config, hat)] = new(null, true) { ItemsSeen = 1000, CoverageStatus = "PossiblyTruncated" };
+            var visited = new List<CatalogSearchPartition>();
+            var discovery = new Discovery((partition, cursor) => { visited.Add(partition); return new([], null); });
+            await RunAsync(config, store, discovery);
+            var children = CatalogCoveragePlanner.Expand(hat, config);
+            Check.That(visited.Take(children.Count).Select(x => x.Key).ToHashSet().SetEquals(children.Select(x => x.Key)), "Subdivisions were delayed behind limited categories");
+            Check.That(visited.Last().Scope == CatalogSearchScope.Collectibles, "Limited coverage was lost");
+            Check.That(visited.Select(x => x.Key).Distinct().Count() == visited.Count, "Partition was fetched twice");
+        });
+        suite.AsyncTest("Coverage continuation yields to other queued partitions without losing cursor", async () =>
+        {
+            var config = SmallConfig();
+            config.CoverageAssetTypeIds = [8];
+            var visited = new List<string>();
+            var discovery = new Discovery((partition, cursor) =>
+            {
+                visited.Add(partition.AssetTypeId.HasValue ? "hat" : cursor ?? "root");
+                return partition.AssetTypeId is null && cursor is null ? new([], "next") : new([], null);
+            });
+            var store = new Checkpoints();
+            await RunAsync(config, store, discovery);
+            Check.That(visited.SequenceEqual(new[] { "root", "hat", "next" }), "Continuation starved another partition or lost cursor");
+            Check.That(store.States[Key(config, new(CatalogSearchScope.All))].PagesProcessed == 2, "Root page count lost");
+        });
         suite.AsyncTest("Coverage resumes typed cursor and retains a saturated leaf as incomplete coverage", async () =>
         {
             var config = SmallConfig();
@@ -185,7 +250,7 @@ internal static class CoverageTests
             }, config).All(x => x.SortType != 0), "Zero price range loops forever");
         });
     }
-    private static RobloxCatalogOptions SmallConfig() => new() { SearchScopes = [CatalogSearchScope.All], CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [] };
+    private static RobloxCatalogOptions SmallConfig() => new() { SearchScopes = [CatalogSearchScope.All], CoverageAssetTypeIds = [], CoverageBundleTypeIds = [], CoverageKeywords = [], CoverageAdditionalFiltersEnabled = false };
     private static string Key(RobloxCatalogOptions options, CatalogSearchPartition partition) => options.CoverageScopeKey + ":" + partition.Key;
     private static async Task RunAsync(RobloxCatalogOptions config, Checkpoints checkpoints, Discovery discovery)
     {

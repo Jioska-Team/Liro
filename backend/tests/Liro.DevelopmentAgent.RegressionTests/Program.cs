@@ -7,6 +7,7 @@ SetupTests.Register(suite);
 DashboardTests.Register(suite);
 StartupTests.Register(suite);
 BoundaryTests.Register(suite);
+LifecycleBoundaryTests.Register(suite);
 return await suite.RunAsync();
 
 

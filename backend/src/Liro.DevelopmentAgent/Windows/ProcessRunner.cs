@@ -17,7 +17,7 @@ public sealed class ProcessRunner : ICommandRunner
         var info = CreateStartInfo(executable, arguments);
         using var process = Process.Start(info) ?? throw new InvalidOperationException("No se pudo iniciar el comando local.");
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        deadline.CancelAfter(TimeSpan.FromSeconds(arguments.Count > 0 && arguments[0] == "stop" ? 60 : 10));
         var output = ReadBoundedAsync(process.StandardOutput, deadline.Token);
         var errors = ReadBoundedAsync(process.StandardError, deadline.Token);
         try

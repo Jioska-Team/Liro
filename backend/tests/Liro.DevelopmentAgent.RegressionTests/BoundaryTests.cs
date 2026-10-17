@@ -102,6 +102,9 @@ internal static class BoundaryTests
     private sealed class StartupFake : IStartupCoordinator
     {
         public int Calls;
+        public Task<StartupResult> RestartAsync(CancellationToken token) => EnsureReadyAsync(token);
+        public Task<StartupResult> StopAsync(CancellationToken token) => Task.FromResult(new StartupResult(StartupStatus.Stopped));
+        public Task<StartupResult> GetStatusAsync(CancellationToken token) => Task.FromResult(new StartupResult(StartupStatus.Unknown));
         public Task<StartupResult> EnsureReadyAsync(CancellationToken token) { Calls++; return Task.FromResult(new StartupResult(StartupStatus.Ready, new Uri("http://192.168.50.10:5205/"))); }
     }
     private sealed class ReplyFake : IButtonReply

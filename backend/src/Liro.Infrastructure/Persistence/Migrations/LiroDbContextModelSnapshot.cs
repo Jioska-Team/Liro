@@ -23,6 +23,24 @@ namespace Liro.Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Liro.Domain.Catalog.Entities.BundleComponent", b =>
+                {
+                    b.Property<Guid>("BundleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ComponentItemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("BundleId", "ComponentItemId");
+
+                    b.HasIndex("ComponentItemId");
+
+                    b.ToTable("BundleComponents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_BundleComponents_DifferentItems", "\"BundleId\" <> \"ComponentItemId\"");
+                        });
+                });
+
             modelBuilder.Entity("Liro.Domain.Catalog.Entities.Item", b =>
                 {
                     b.Property<Guid>("Id")
@@ -31,6 +49,15 @@ namespace Liro.Infrastructure.Persistence.Migrations
 
                     b.Property<int?>("AssetTypeId")
                         .HasColumnType("integer");
+
+                    b.PrimitiveCollection<long[]>("BundleComponentAssetIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint[]")
+                        .HasDefaultValueSql("'{}'::bigint[]");
+
+                    b.Property<DateTime?>("BundleComponentsObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int?>("BundleTypeId")
                         .HasColumnType("integer");
@@ -94,6 +121,9 @@ namespace Liro.Infrastructure.Persistence.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("RobloxUpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ThumbnailCheckedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ThumbnailUpdatedAt")
@@ -312,6 +342,50 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.ToTable("CatalogImportFailures", (string)null);
                 });
 
+            modelBuilder.Entity("Liro.Infrastructure.Persistence.CatalogLimitedWatch", b =>
+                {
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("ItemId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("AddedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("NextCheckAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ItemType", "ItemId");
+
+                    b.HasIndex("NextCheckAtUtc", "ItemType", "ItemId");
+
+                    b.ToTable("CatalogLimitedWatches", (string)null);
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Persistence.CatalogPriorityRefresh", b =>
+                {
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<long>("ItemId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("DetectedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("ItemType", "ItemId");
+
+                    b.HasIndex("DetectedAtUtc");
+
+                    b.ToTable("CatalogPriorityRefreshes", (string)null);
+                });
+
             modelBuilder.Entity("Liro.Infrastructure.Persistence.Outbox.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -351,6 +425,21 @@ namespace Liro.Infrastructure.Persistence.Migrations
                         .HasFilter("\"ProcessedAtUtc\" IS NULL AND \"DeadLetteredAtUtc\" IS NULL");
 
                     b.ToTable("OutboxMessages", (string)null);
+                });
+
+            modelBuilder.Entity("Liro.Domain.Catalog.Entities.BundleComponent", b =>
+                {
+                    b.HasOne("Liro.Domain.Catalog.Entities.Item", null)
+                        .WithMany()
+                        .HasForeignKey("BundleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Liro.Domain.Catalog.Entities.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ComponentItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Liro.Domain.Catalog.Entities.ItemMarketSnapshot", b =>

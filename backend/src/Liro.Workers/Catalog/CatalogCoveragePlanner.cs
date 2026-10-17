@@ -10,6 +10,17 @@ public static class CatalogCoveragePlanner
         roots.AddRange(options.CoverageAssetTypeIds.Select(type => new CatalogSearchPartition(CatalogSearchScope.All) { AssetTypeId = type }));
         roots.AddRange(options.CoverageBundleTypeIds.Select(type => new CatalogSearchPartition(CatalogSearchScope.All) { BundleTypeId = type }));
         roots.AddRange(options.CoverageKeywords.Where(keyword => !string.IsNullOrWhiteSpace(keyword)).Select(keyword => new CatalogSearchPartition(CatalogSearchScope.All) { Keyword = keyword.Trim() }));
+        if (options.CoverageAdditionalFiltersEnabled)
+        {
+            // These overlap with All; independent cursors let us measure their additional coverage.
+            roots.Add(new(CatalogSearchScope.Premium));
+            roots.Add(new(CatalogSearchScope.TimedOptions));
+            foreach (var category in new[] { 1, 2, 5, 7 })
+                roots.Add(new(CatalogSearchScope.All) { CategoryFilter = category });
+            // No price bounds: off-sale items remain eligible even without a usable price.
+            foreach (var sort in new[] { 2, 4, 5 })
+                roots.Add(new(CatalogSearchScope.All) { SortType = sort });
+        }
         var result = roots.DistinctBy(partition => partition.Key).OrderBy(partition => partition.Keyword is null ? 1 : 0).ToArray();
         return result;
     }
@@ -61,6 +72,11 @@ public static class CatalogCoveragePlanner
         {
             SortType = 1
         });
+        if (options.CoverageAdditionalFiltersEnabled)
+        {
+            foreach (var sort in new[] { 2, 4, 5 })
+                children.Add(next with { SortType = sort });
+        }
         return children;
     }
 }

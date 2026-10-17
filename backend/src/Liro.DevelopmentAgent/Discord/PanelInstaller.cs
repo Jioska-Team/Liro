@@ -19,7 +19,10 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
         {
             throw new SetupFailure("El canal configurado no pertenece al servidor autorizado.");
         }
-        var buttons = new ComponentBuilder().WithButton("Iniciar / obtener API", InteractionHandler.ButtonId, ButtonStyle.Primary);
+        var buttons = new ComponentBuilder()
+            .WithButton("Iniciar / reiniciar API", InteractionHandler.ButtonId, ButtonStyle.Primary)
+            .WithButton("Stop", InteractionHandler.StopButtonId, ButtonStyle.Danger)
+            .WithButton("Estado", InteractionHandler.StatusButtonId, ButtonStyle.Secondary);
         if (options.OwnerUserId != 0) { buttons.WithButton("Mi panel Aspire", DashboardInteractionHandler.ButtonId, ButtonStyle.Secondary); }
         var components = buttons.Build();
         if (options.PanelMessageId != 0)
@@ -31,7 +34,7 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
                 if (message is not RestUserMessage editable) { throw new SetupFailure("No se pudo editar el panel existente."); }
                 await editable.ModifyAsync(properties =>
                 {
-                    properties.Content = "Liro: acceso al catalogo de desarrollo por red local. Panel Aspire solo para el propietario configurado.";
+                    properties.Content = "Liro: control del backend de desarrollo. Iniciar reinicia si ya esta activo. Estado comprueba AppHost y API. Aspire solo para el propietario.";
                     properties.Components = components;
                     properties.AllowedMentions = AllowedMentions.None;
                 }, requests);

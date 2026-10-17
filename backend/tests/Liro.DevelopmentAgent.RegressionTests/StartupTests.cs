@@ -9,6 +9,82 @@ internal static class StartupTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("Restart stops running backend before starting and returns ready URL", async () =>
+        {
+            var fake = new RuntimeFake { Ready = true, DockerReady = true, State = AppHostState.Running };
+            var result = await Coordinator(fake).RestartAsync(default);
+            Assert(result.Status == StartupStatus.Ready && result.ApiBaseUri is not null);
+            Assert(fake.Order.SequenceEqual(new[] { "stop", "backend" }) && fake.DockerStarts == 0);
+        });
+        suite.AsyncTest("Restart starts stopped backend without issuing stop", async () =>
+        {
+            var fake = new RuntimeFake();
+            var result = await Coordinator(fake).RestartAsync(default);
+            Assert(result.Status == StartupStatus.Ready && fake.Stops == 0 && fake.Starts == 1);
+        });
+        suite.AsyncTest("Stop verifies stopped state without starting backend or Docker", async () =>
+        {
+            var fake = new RuntimeFake { Ready = true, State = AppHostState.Running };
+            var coordinator = Coordinator(fake);
+            Assert((await coordinator.StopAsync(default)).Status == StartupStatus.Stopped);
+            Assert((await coordinator.GetStatusAsync(default)).Status == StartupStatus.Stopped);
+            Assert((await coordinator.StopAsync(default)).Status == StartupStatus.Stopped);
+            Assert(fake.Stops == 1 && fake.Starts == 0 && fake.DockerStarts == 0);
+        });
+        suite.AsyncTest("Failed stop never launches replacement backend", async () =>
+        {
+            var fake = new RuntimeFake { State = AppHostState.Running, FailStop = true };
+            var result = await Coordinator(fake).RestartAsync(default);
+            Assert(result.Status == StartupStatus.ConfigurationError && result.ApiBaseUri is null && fake.Starts == 0);
+        });
+        suite.AsyncTest("Unknown backend cannot be stopped or restarted", async () =>
+        {
+            foreach (var state in new[] { AppHostState.Unknown, AppHostState.Incompatible })
+            {
+                var fake = new RuntimeFake { State = state };
+                var coordinator = Coordinator(fake);
+                Assert((await coordinator.RestartAsync(default)).Status == StartupStatus.AppHostUnavailable);
+                Assert((await coordinator.StopAsync(default)).Status == StartupStatus.AppHostUnavailable);
+                Assert(fake.Stops == 0 && fake.Starts == 0);
+            }
+        });
+        suite.AsyncTest("Concurrent restart clicks coalesce and conflicting stop is rejected", async () =>
+        {
+            var fake = new RuntimeFake { State = AppHostState.Running, BlockStartup = true, DockerReady = true };
+            var coordinator = Coordinator(fake);
+            var first = coordinator.RestartAsync(default);
+            var second = coordinator.RestartAsync(default);
+            Assert((await coordinator.GetStatusAsync(default)).Status == StartupStatus.Restarting);
+            Assert((await coordinator.StopAsync(default)).Status == StartupStatus.Busy);
+            fake.Release.TrySetResult();
+            Assert((await first).Status == StartupStatus.Ready && (await second).Status == StartupStatus.Ready);
+            Assert(fake.Stops == 1 && fake.Starts == 1);
+        });
+        suite.AsyncTest("Status distinguishes ready unhealthy starting stopped and unknown without mutations", async () =>
+        {
+            foreach (var entry in new[]
+            {
+                (AppHostState.Running, true, StartupStatus.Ready),
+                (AppHostState.Running, false, StartupStatus.Unhealthy),
+                (AppHostState.Starting, false, StartupStatus.Starting),
+                (AppHostState.Stopped, false, StartupStatus.Stopped),
+                (AppHostState.Unknown, false, StartupStatus.Unknown)
+            })
+            {
+                var fake = new RuntimeFake { State = entry.Item1, Ready = entry.Item2 };
+                var result = await Coordinator(fake).GetStatusAsync(default);
+                Assert(result.Status == entry.Item3 && fake.Starts == 0 && fake.Stops == 0 && fake.DockerStarts == 0);
+                Assert((result.ApiBaseUri is not null) == entry.Item2);
+            }
+        });
+        suite.AsyncTest("Unconfirmed shutdown times out without replacement launch", async () =>
+        {
+            var fake = new RuntimeFake { State = AppHostState.Running, RemainRunningAfterStop = true };
+            var clock = new ManualClock();
+            var operation = Coordinator(fake, clock).RestartAsync(default);
+            clock.Advance(TimeSpan.FromSeconds(60));
+            Assert((await operation).Status == StartupStatus.TimedOut && fake.Starts == 0);
+        });
         suite.AsyncTest("Ready API starts nothing", async () =>
         {
             var fake = new RuntimeFake { Ready = true };
@@ -99,7 +175,8 @@ internal static class StartupTests
     private sealed class RuntimeFake : ILocalRuntime, ILanNetworkResolver, IReadinessProbe
     {
         public bool Ready, DockerReady, BlockStartup, ChangeNetwork, DesktopOpen;
-        public int Starts, DockerStarts, Resolves;
+        public int Starts, Stops, DockerStarts, Resolves;
+        public bool FailStop, RemainRunningAfterStop;
         public int Probes, DockerChecks, ReadyAfterProbes = int.MaxValue, DockerReadyAfterChecks = int.MaxValue;
         public AppHostState State = AppHostState.Stopped;
         public List<string> Order = [];
@@ -114,6 +191,13 @@ internal static class StartupTests
         public Task<bool> IsDockerDesktopRunningAsync(CancellationToken token) => Task.FromResult(DesktopOpen || DockerReady);
         public Task StartDockerDesktopAsync(CancellationToken token) { DockerStarts++; DockerReady = true; Order.Add("docker"); return Task.CompletedTask; }
         public Task<AppHostState> GetAppHostStateAsync(CancellationToken token) => Task.FromResult(State);
+        public Task StopAppHostAsync(CancellationToken token)
+        {
+            Stops++; Order.Add("stop");
+            if (FailStop) { throw new InvalidOperationException("Stop failed"); }
+            if (!RemainRunningAfterStop) { State = AppHostState.Stopped; Ready = false; }
+            return Task.CompletedTask;
+        }
         public async Task StartAppHostAsync(LanEndpoint endpoint, CancellationToken token)
         {
             Starts++; State = AppHostState.Starting; Order.Add("backend");

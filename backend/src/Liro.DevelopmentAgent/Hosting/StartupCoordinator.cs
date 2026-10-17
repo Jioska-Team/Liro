@@ -10,37 +10,101 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
     private DateTimeOffset failedAt = DateTimeOffset.MinValue;
     private StartupResult? lastFailure;
 
-    public async Task<StartupResult> EnsureReadyAsync(CancellationToken cancellationToken)
+    private enum Operation { EnsureReady, Restart, Stop }
+    private Operation activeOperation;
+
+    public Task<StartupResult> EnsureReadyAsync(CancellationToken token) => ExecuteAsync(Operation.EnsureReady, token);
+    public Task<StartupResult> RestartAsync(CancellationToken token) => ExecuteAsync(Operation.Restart, token);
+    public Task<StartupResult> StopAsync(CancellationToken token) => ExecuteAsync(Operation.Stop, token);
+
+    private async Task<StartupResult> ExecuteAsync(Operation requested, CancellationToken cancellationToken)
     {
         Task<StartupResult> operation;
         lock (gate)
         {
-            if (active is { IsCompleted: false }) { operation = active; }
-            else if (lastFailure is not null && clock.GetUtcNow() - failedAt < TimeSpan.FromSeconds(30))
+            if (active is { IsCompleted: false })
+            {
+                // Repeated clicks share work; conflicting commands never queue a surprise restart.
+                operation = activeOperation == requested ? active : Task.FromResult(new StartupResult(StartupStatus.Busy));
+            }
+            else if (requested == Operation.EnsureReady && lastFailure is not null && clock.GetUtcNow() - failedAt < TimeSpan.FromSeconds(30))
             {
                 operation = Task.FromResult(lastFailure);
             }
-            else { operation = active = RunAsync(); }
+            else
+            {
+                activeOperation = requested;
+                operation = active = RunAsync(requested);
+            }
         }
-        var result = await operation.WaitAsync(cancellationToken);
-        return result;
+        return await operation.WaitAsync(cancellationToken);
     }
 
-    private async Task<StartupResult> RunAsync()
+    public async Task<StartupResult> GetStatusAsync(CancellationToken cancellationToken)
+    {
+        lock (gate)
+        {
+            if (active is { IsCompleted: false })
+            {
+                return new StartupResult(activeOperation switch
+                {
+                    Operation.Restart => StartupStatus.Restarting,
+                    Operation.Stop => StartupStatus.Stopping,
+                    _ => StartupStatus.Starting
+                });
+            }
+        }
+        try
+        {
+            var state = await runtime.GetAppHostStateAsync(cancellationToken);
+            if (state == AppHostState.Stopped) { return new(StartupStatus.Stopped); }
+            if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new(StartupStatus.Unknown); }
+            var endpoint = await network.ResolveAsync(cancellationToken);
+            if (await probe.IsReadyAsync(endpoint, cancellationToken)) { return await FinalizeAsync(endpoint, cancellationToken); }
+            return new(state == AppHostState.Starting ? StartupStatus.Starting : StartupStatus.Unhealthy);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { return new(StartupStatus.Unknown); }
+    }
+
+    private async Task<StartupResult> RunAsync(Operation requested)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(8), clock);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, lifetime.ApplicationStopping);
         StartupResult result;
-        try { result = await StartAsync(deadline.Token); }
+        try
+        {
+            result = requested == Operation.EnsureReady ? await StartAsync(deadline.Token) : await StopCoreAsync(deadline.Token);
+            if (requested == Operation.Restart && result.Status == StartupStatus.Stopped)
+            {
+                result = await StartAsync(deadline.Token);
+            }
+        }
         catch (OperationCanceledException) { result = new StartupResult(StartupStatus.TimedOut); }
         catch (Exception) { result = new StartupResult(StartupStatus.ConfigurationError); }
         lock (gate)
         {
-            lastFailure = result.Status == StartupStatus.Ready ? null : result;
+            lastFailure = result.Status is StartupStatus.Ready or StartupStatus.Stopped ? null : result;
             if (lastFailure is not null) { failedAt = clock.GetUtcNow(); }
         }
-        log.Write(result.Status == StartupStatus.Ready ? AgentEvent.Ready : AgentEvent.Failed);
+        log.Write(result.Status switch { StartupStatus.Ready => AgentEvent.Ready, StartupStatus.Stopped => AgentEvent.Stopped, _ => AgentEvent.Failed });
         return result;
+    }
+
+    private async Task<StartupResult> StopCoreAsync(CancellationToken cancellationToken)
+    {
+        var state = await runtime.GetAppHostStateAsync(cancellationToken);
+        if (state == AppHostState.Stopped) { return new(StartupStatus.Stopped); }
+        if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new(StartupStatus.AppHostUnavailable); }
+        await runtime.StopAppHostAsync(cancellationToken);
+        // A successful CLI exit alone does not prove the backend has stopped.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60), clock);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+        while (await runtime.GetAppHostStateAsync(deadline.Token) != AppHostState.Stopped)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), clock, deadline.Token);
+        }
+        return new(StartupStatus.Stopped);
     }
 
     private async Task<StartupResult> StartAsync(CancellationToken cancellationToken)

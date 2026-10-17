@@ -12,6 +12,7 @@ public sealed class RobloxThumbnailClient(HttpClient httpClient) : IRobloxThumbn
     public async Task<string?> GetThumbnailAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
         key.Validate();
+        using var priority = RobloxRequestPriority.Background();
         try
         {
             var resource = key.Type == CatalogItemType.Bundle ? "bundles/thumbnails?bundleIds" : "assets?assetIds";

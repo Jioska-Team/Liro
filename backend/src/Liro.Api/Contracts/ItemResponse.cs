@@ -20,6 +20,8 @@ public sealed record ItemResponse(
         get; init;
     }
     public string ItemType { get; init; } = "Asset";
+    public bool IsBodyPart { get; init; }
+    public bool IsCatalogVisible { get; init; }
     public int? BundleTypeId
     {
         get; init;
@@ -75,6 +77,8 @@ public sealed record ItemResponse(
         {
             RobloxItemId = item.RobloxAssetId,
             ItemType = item.ItemType.ToString(),
+            IsBodyPart = Liro.Domain.Catalog.Models.CatalogVisibility.IsBodyPart(item),
+            IsCatalogVisible = !Liro.Domain.Catalog.Models.CatalogVisibility.IsBodyPart(item),
             BundleTypeId = item.BundleTypeId,
             Description = item.Description,
             MarketplaceUrl = item.MarketplaceUrl,

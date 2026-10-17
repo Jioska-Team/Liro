@@ -98,6 +98,7 @@ public sealed class DevelopmentLanAccess
             var allowedMethod = HttpMethods.IsGet(context.Request.Method)
                 || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method);
             var allowedPath = context.Request.Path.StartsWithSegments("/api/v1/items")
+                || context.Request.Path.StartsWithSegments("/api/v1/catalog")
                 || context.Request.Path.Equals(new PathString("/api/lan/ready"));
             if (!allowedPeer || !allowedMethod || !allowedPath)
             {

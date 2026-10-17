@@ -12,6 +12,7 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         builder.Ignore(x => x.DomainEvents);
         builder.Ignore(x => x.PendingMarketSnapshots);
         builder.Property(x => x.Restrictions).HasColumnType("text[]");
+        builder.Property(x => x.BundleComponentAssetIds).HasColumnType("bigint[]").HasDefaultValueSql("'{}'::bigint[]");
         builder.HasOne(x => x.MarketState).WithOne().HasForeignKey<ItemMarketState>(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(x => x.Version).IsRowVersion();
         builder.HasIndex(x => x.NextRefreshAt);

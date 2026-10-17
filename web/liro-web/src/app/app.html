@@ -1,19 +1,29 @@
 <main>
-  <h1>Liro</h1>
-
-  @if (loading()) {
-    <p>Conectando con Liro...</p>
-  } @else {
-    <p>
-      Backend:
-      <strong>{{ backendConnected() ? 'Connected' : 'Disconnected' }}</strong>
-    </p>
-
-    <p>PostgreSQL: {{ postgres() }}</p>
-    <p>Valkey: {{ valkey() }}</p>
-
-    @if (latency() !== null) {
-      <p>Valkey latency: {{ latency() }} ms</p>
-    }
-  }
+<header><p>Liro</p><h1>Catálogo de Roblox</h1><p>Avatares completos y artículos independientes.</p></header>
+@if (catalogError()) { <p role="alert">{{ catalogError() }}</p><button (click)="loadPage(page())">Reintentar</button> }
+@if (catalogLoading()) { <p role="status">Cargando catálogo…</p> }
+<section class="catalog" aria-label="Artículos del catálogo" [attr.aria-busy]="catalogLoading()">
+@for (item of items(); track item.id) {
+ <article>
+ @if (item.thumbnailUrl) { <img [src]="item.thumbnailUrl" [alt]="item.name" loading="lazy" width="220" height="220"> }
+ @else { <div class="placeholder">Imagen pendiente</div> }
+ <p class="kind">{{ item.itemType === 'Bundle' ? (item.bundleTypeId === 1 ? 'Avatar completo' : 'Paquete') : 'Artículo independiente' }}</p>
+ <h2>{{ item.name }}</h2><a [href]="item.marketplaceUrl" target="_blank" rel="noopener noreferrer">Ver en Roblox</a>
+ @if (item.itemType === 'Bundle') { <button (click)="showComponents(item)" [attr.aria-expanded]="selectedBundle()?.id === item.id">Ver componentes</button> }
+ </article>
+} @empty { @if (!catalogLoading() && !catalogError()) { <p>No hay artículos para mostrar.</p> } }
+</section>
+<nav aria-label="Páginas del catálogo"><button (click)="loadPage(page() - 1)" [disabled]="page() === 1 || catalogLoading()">Anterior</button><span>Página {{ page() }}</span><button (click)="loadPage(page() + 1)" [disabled]="!hasMore() || catalogLoading()">Siguiente</button></nav>
+@if (selectedBundle(); as bundle) {
+ <section class="components" aria-label="Componentes del paquete"><h2>Componentes de {{ bundle.name }}</h2><button (click)="selectedBundle.set(null)">Cerrar</button>
+ @if (componentsError()) { <p role="alert">{{ componentsError() }}</p> }
+ @else if (contents(); as detail) {
+ <ul>@for (component of detail.components; track component.id) { <li>{{ component.name }}</li> }</ul>
+ @if (detail.pendingAssetIds.length) { <p>{{ detail.pendingAssetIds.length }} componentes pendientes de confirmar.</p> }
+ @if (!detail.relationshipsObservedAtUtc) { <p>El sistema todavía está consultando la composición de este paquete.</p> }
+ @else if (!detail.components.length && !detail.pendingAssetIds.length) { <p>Roblox no ha informado componentes para este paquete.</p> }
+ } @else { <p role="status">Consultando componentes…</p> }
+ </section>
+}
+<details><summary>Estado de conexión</summary><p>{{ connected() ? 'Servidor conectado' : 'Servidor sin conexión' }}</p></details>
 </main>
