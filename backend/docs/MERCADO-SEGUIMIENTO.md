@@ -2,7 +2,10 @@
 
 ## Estado inicial
 
-`Liro.MarketWorker` es un proceso separado. No se lanza por defecto y `Market:Enabled=false`.
+`Liro.MarketWorker` es un proceso separado administrado por Aspire. AppHost lo inicia por
+defecto (`MarketWorker:Launch=true`, `MarketWorker:Enabled=true`) junto con el backend,
+después de PostgreSQL y Valkey. El comando de parada de Aspire utilizado por Discord
+también lo detiene. El ejecutable aislado conserva `Market:Enabled=false` por defecto.
 No cambia los servicios ni los presupuestos de la principal, conocidos o complementarias.
 Sin conexión de mercado válida no programa artículos ni envía solicitudes. No existe salida
 directa de respaldo ni rotación automática para eludir un 429. No se incluyen proxies reales.
@@ -20,7 +23,7 @@ directa de respaldo ni rotación automática para eludir un 429. No se incluyen 
 - `MarketRapSnapshots`: cambios de RAP observados por Liro. No son el historial de precios
   medios; el proveedor no expone una serie histórica de RAP en `priceDataPoints`.
 
-Los precios del catálogo y su historial YA se conservan en `ItemMarketStates` y
+Los precios del catálogo y su historial YA se conservan en `ItemMarketState` y
 `ItemMarketSnapshots`. Se reutilizan esas tablas; el trabajador nuevo no vuelve a solicitarlos.
 
 ## Ejecución
@@ -36,11 +39,27 @@ Los precios del catálogo y su historial YA se conservan en `ItemMarketStates` y
    secretos del entorno. Variables equivalentes: `MarketProxySecrets__PROXY_01__Username`
    y `MarketProxySecrets__PROXY_01__Password`. No pegar secretos en SQL, Git ni diagnósticos.
 5. Activar el registro en CatalogoGeneral. Se recarga cada minuto (máximo 32 conexiones).
-6. Configurar `MarketWorker:Launch=true` y `MarketWorker:Enabled=true` en AppHost y reiniciar
-   AppHost cuando se decida iniciar esta etapa. Los valores por defecto son false.
-   Ejecución independiente: requiere ConnectionStrings:lirodb, ConnectionStrings:valkey y
-   Market:Enabled=true. No es necesario activar ni reiniciar el proceso del catálogo para
-   ejecutar este proyecto de forma independiente.
+6. Iniciar el backend con AppHost, directamente o mediante Discord. AppHost activa mercado y
+   le transmite el entorno para cargar los secretos locales en Development. Para deshabilitarlo
+   explícitamente, configurar `MarketWorker:Launch=false` antes del siguiente arranque.
+   No iniciar además el antiguo proceso independiente. Al migrar, detener primero ese proceso.
+
+## Arranque único y parada
+
+El proceso conserva abierto un archivo con acceso exclusivo en
+`%LOCALAPPDATA%\Liro\MarketWorker\worker.lock`. Una segunda instancia del mismo usuario
+termina antes de iniciar los servicios y no consulta Roblox. El sistema operativo libera el
+bloqueo al salir, incluso si el proceso termina abruptamente; un archivo residual no impide
+reiniciar. `Market:InstanceLockPath` permite indicar una ruta compartida explícita para otros
+despliegues locales. Esta protección es local, no un bloqueo distribuido entre servidores.
+
+El botón de Discord detiene el AppHost configurado mediante `aspire stop`; Aspire es el dueño
+del proceso de mercado. Al detener el trabajador se cancela la consulta o espera pendiente.
+Una reserva interrumpida se recupera al vencer su plazo, sin borrar el historial.
+
+Mercado desactiva los reintentos automáticos de Entity Framework porque su guardado usa una
+transacción explícita; el propio trabajador reprograma los fallos. Esta configuración está en
+su arranque y no modifica la conexión ni las políticas de la API o el trabajador del catálogo.
 
 ## Recorrido y control de tráfico
 

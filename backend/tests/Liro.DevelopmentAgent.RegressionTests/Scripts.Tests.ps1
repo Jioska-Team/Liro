@@ -20,11 +20,13 @@ function Get-NetFirewallAddressFilter { param([Parameter(ValueFromPipeline)]$Inp
 function Get-NetFirewallPortFilter { param([Parameter(ValueFromPipeline)]$InputObject) process { [pscustomobject]@{LocalPort=@('5205')} } }
 function Get-ScheduledTask { [CmdletBinding()]param($TaskName,$TaskPath) if ($global:LiroTest_tasks.ContainsKey($TaskName)) { $global:LiroTest_tasks[$TaskName] } }
 function New-ScheduledTaskAction { param($Execute,$Argument,$WorkingDirectory) [pscustomobject]@{Execute=$Execute; Argument=$Argument} }
-function New-ScheduledTaskTrigger { param([switch]$AtLogOn,$User) [pscustomobject]@{User=$User} }
+function New-ScheduledTaskTrigger { param([switch]$AtLogOn,$User,[switch]$Once,$At,$RepetitionInterval) [pscustomobject]@{User=$User; Once=$Once; RepetitionInterval=$RepetitionInterval} }
 function New-ScheduledTaskPrincipal { param($UserId,$LogonType,$RunLevel) Assert-True ($RunLevel -eq 'Limited' -and $LogonType -eq 'Interactive') 'Elevated task requested'; [pscustomobject]@{User=$UserId} }
-function New-ScheduledTaskSettingsSet { param($MultipleInstances,$ExecutionTimeLimit,$RestartCount,$RestartInterval,[switch]$AllowStartIfOnBatteries,[switch]$DontStopIfGoingOnBatteries) Assert-True ($MultipleInstances -eq 'IgnoreNew') 'Duplicate task instances allowed'; [pscustomobject]@{} }
-function Register-ScheduledTask { param($TaskName,$Action,$Trigger,$Principal,$Settings,[switch]$Force) $global:LiroTest_tasks[$TaskName]=[pscustomobject]@{Actions=@($Action);Argument=$Action.Argument;Settings=[pscustomobject]@{Enabled=$true}}  }
+function New-ScheduledTaskSettingsSet { param($MultipleInstances,$ExecutionTimeLimit,$RestartCount,$RestartInterval,[switch]$AllowStartIfOnBatteries,[switch]$DontStopIfGoingOnBatteries,[switch]$StartWhenAvailable) Assert-True ($MultipleInstances -eq 'IgnoreNew') 'Duplicate task instances allowed'; [pscustomobject]@{} }
+function Register-ScheduledTask { param($TaskName,$Action,$Trigger,$Principal,$Settings,[switch]$Force) $global:LiroTest_tasks[$TaskName]=[pscustomobject]@{Actions=@($Action);Argument=$Action.Argument;Triggers=@($Trigger);Settings=[pscustomobject]@{Enabled=$true}}  }
 function Unregister-ScheduledTask { param($TaskName,[switch]$Confirm) $global:LiroTest_tasks.Remove($TaskName) }
+function Start-ScheduledTask { param($TaskName,$TaskPath) $global:LiroTest_events += 'task-start' }
+function Start-Process { param($FilePath,$ArgumentList,$WindowStyle) throw 'Inicio fuera de la tarea supervisada' }
 function Test-Path { param($LiteralPath,$PathType) $true }
 $global:LiroTest_cimPath = $null
 function Get-CimInstance { [CmdletBinding()]param($ClassName,$Filter) [pscustomobject]@{ExecutablePath=$global:LiroTest_cimPath} }
@@ -94,8 +96,15 @@ $setup = Join-Path $BackendRoot 'Setup-DevelopmentAgent.ps1'
 & $setup -Action RegisterStartup
 Assert-True ($global:LiroTest_tasks.Count -eq 1 -and $global:LiroTest_tasks['Liro.DevelopmentAgent'].Argument -eq 'run') 'Repeated install duplicated startup task'
 Write-Output 'PASS repeated startup registration is idempotent and unprivileged'
+Assert-True (@($global:LiroTest_tasks['Liro.DevelopmentAgent'].Triggers | Where-Object {$_.Once -and $_.RepetitionInterval -eq [TimeSpan]::FromMinutes(1)}).Count -eq 1) 'Falta recuperación periódica cada minuto'
+$global:LiroTest_events=@()
+& $setup -Action Run
+& $setup -Action Run
+Assert-True (@($global:LiroTest_events | Where-Object {$_ -eq 'task-start'}).Count -eq 2 -and $global:LiroTest_tasks.Count -eq 1) 'Run no reutiliza la tarea supervisada'
+Write-Output 'Correcto: recuperación cada minuto e inicio supervisado sin tareas duplicadas'
 & $setup -Action StopAgent
 Assert-True ($global:LiroTest_tasks.Count -eq 1 -and $global:LiroTest_stopped.Count -eq 1 -and $global:LiroTest_stopped[0] -eq 101) 'StopAgent touched another process or startup task'
+Assert-True (-not $global:LiroTest_tasks['Liro.DevelopmentAgent'].Settings.Enabled) 'StopAgent permite que el agente reaparezca'
 Write-Output 'PASS StopAgent preserves startup task and stops only installed agent'
 $global:LiroTest_stopped = @()
 $global:LiroTest_running = $true
@@ -155,6 +164,7 @@ Write-Output 'PASS fallback path never authorizes stopping foreign executable'
 $image=& (Join-Path $BackendRoot 'Get-AgentProcessImage.ps1') -ProcessId $PID
 Assert-True ($image -eq [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName) 'Native image lookup returned wrong executable'
 Write-Output 'PASS native image lookup resolves current process without module permissions'
-Write-Output '18/18 script tests passed (OS mutations mocked; native lookup read-only)'
+Write-Output 'Todas las pruebas del instalador pasaron; operaciones de Windows simuladas.'
+
 
 

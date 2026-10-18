@@ -58,6 +58,8 @@ function Stop-InstalledAgent {
 }
 
 if ($Action -eq 'StopAgent') {
+    $task = Get-AgentStartupTask
+    if ($task) { Disable-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction Stop | Out-Null }
     Stop-InstalledAgent
     Write-Host 'Agente detenido y salida verificada. Backend, Docker y configuracion conservados.'
     return
@@ -95,15 +97,25 @@ switch ($Action) {
     'Configure' { & $executable configure; if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar el agente.' } }
     'ConfigureOwner' { & $executable configure-owner; if ($LASTEXITCODE -ne 0) { throw 'No se pudo configurar el propietario.' } }
     'InstallPanel' { & $executable install-panel; if ($LASTEXITCODE -ne 0) { throw 'No se pudo publicar el panel.' } }
-    'Run' { Start-Process -FilePath $executable -ArgumentList 'run' -WindowStyle Hidden | Out-Null }
+    'Run' {
+        & $PSCommandPath -Action RegisterStartup
+        Start-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction Stop
+        Write-Host 'Inicio solicitado a la tarea supervisada; se conserva una única instancia.'
+    }
     'RegisterStartup' {
+        $null = Get-AgentStartupTask
         $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
         $actionDefinition = New-ScheduledTaskAction -Execute $executable -Argument 'run' -WorkingDirectory $appDirectory
-        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+        $trigger = @(
+            (New-ScheduledTaskTrigger -AtLogOn -User $user)
+            (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1))
+        )
         $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-        $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
         Register-ScheduledTask -TaskName $taskName -Action $actionDefinition -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
-        Write-Host 'Inicio al iniciar sesion configurado para el usuario actual, sin elevar privilegios.'
+        Write-Host 'Inicio automático y recuperación cada minuto configurados, sin elevar privilegios.'
     }
 }
+
+
 

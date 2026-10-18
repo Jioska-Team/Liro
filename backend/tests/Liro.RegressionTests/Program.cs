@@ -1,6 +1,10 @@
 using Liro.RegressionTests;
 
 var suite = new RegressionSuite();
+CsrfDiagnosticsTests.Register(suite);
+if (args.Contains("--csrf-diagnostics-only")) return await suite.RunAsync();
+MarketLifecycleTests.Register(suite);
+if (args.Contains("--market-lifecycle-only")) return await suite.RunAsync();
 MarketTrackingTests.Register(suite);
 KnownWatchOrderingTests.Register(suite);
 GlobalBudgetTests.Register(suite);
@@ -25,6 +29,7 @@ ApiTests.Register(suite);
 LanAccessTests.Register(suite);
 LanReadinessTests.Register(suite);
 return await suite.RunAsync();
+
 
 
 

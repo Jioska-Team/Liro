@@ -3,6 +3,7 @@
     <ProjectReference Include="..\Liro.Api\Liro.Api.csproj" />
     <ProjectReference Include="..\Liro.Workers\Liro.Workers.csproj" />
     <ProjectReference Include="..\Liro.MarketWorker\Liro.MarketWorker.csproj" />
+    <ProjectReference Include="..\..\tools\Liro.HistoryRecovery\Liro.HistoryRecovery.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.6.1" />

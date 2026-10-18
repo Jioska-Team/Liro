@@ -1,4 +1,6 @@
 using System.Net;
+using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Liro.Application.RobloxIntegration;
@@ -171,7 +173,11 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
         if (response.StatusCode != HttpStatusCode.Forbidden
             || !response.Headers.TryGetValues("x-csrf-token", out var tokens))
         {
-            if (response.StatusCode == HttpStatusCode.Forbidden) tokenState.RejectToken(previousToken);
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                tokenState.RejectToken(previousToken);
+                LogForbidden("Definitivo", false, 403, 0);
+            }
             return response;
         }
 
@@ -179,6 +185,7 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
         if (string.IsNullOrWhiteSpace(token))
         {
             tokenState.RejectToken(previousToken);
+            LogForbidden("Definitivo", false, 403, 0);
             return response;
         }
 
@@ -186,9 +193,36 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
         // through the same HTTP pipeline so pacing, cooldowns and cancellation still apply.
         response.Dispose();
         tokenState.SetToken(token);
-        var retryResponse = await SendDetailsAsync(keys, token, cancellationToken);
+        var started = Stopwatch.GetTimestamp();
+        HttpResponseMessage retryResponse;
+        try
+        {
+            retryResponse = await SendDetailsAsync(keys, token, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            LogForbidden("Cancelado", true, 0, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
+        catch (Exception)
+        {
+            LogForbidden("ReintentoFallido", true, 0, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            throw;
+        }
         if (retryResponse.StatusCode == HttpStatusCode.Forbidden) tokenState.RejectToken(token);
+        LogForbidden(retryResponse.IsSuccessStatusCode ? "Recuperado"
+            : retryResponse.StatusCode == HttpStatusCode.Forbidden ? "Definitivo" : "ReintentoFallido",
+            true, (int)retryResponse.StatusCode, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         return retryResponse;
+    }
+    private void LogForbidden(string outcome, bool retried, int status, double elapsedMilliseconds)
+    {
+        // Never include token values, payloads or exception text. Duration includes
+        // waiting for the existing traffic gate; this adds no requests or delays.
+        logger?.Log(outcome is "Recuperado" or "Cancelado" ? LogLevel.Information : LogLevel.Warning,
+            new EventId(40301, "CatalogForbiddenOutcome"),
+            "Diagnóstico 403: proceso {Operation}; resultado {Outcome}; reintento {Retried}; estado final {FinalStatus}; duración del reintento {ElapsedMilliseconds} ms.",
+            RobloxRequestPriority.OperationName, outcome, retried, status, elapsedMilliseconds);
     }
 
     private async Task<HttpResponseMessage> SendDetailsAsync(IReadOnlyList<CatalogItemKey> keys, string? csrfToken, CancellationToken cancellationToken)
