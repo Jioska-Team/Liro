@@ -19,12 +19,7 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
         {
             throw new SetupFailure("El canal configurado no pertenece al servidor autorizado.");
         }
-        var buttons = new ComponentBuilder()
-            .WithButton("Iniciar / reiniciar API", InteractionHandler.ButtonId, ButtonStyle.Primary)
-            .WithButton("Stop", InteractionHandler.StopButtonId, ButtonStyle.Danger)
-            .WithButton("Estado", InteractionHandler.StatusButtonId, ButtonStyle.Secondary);
-        if (options.OwnerUserId != 0) { buttons.WithButton("Mi panel Aspire", DashboardInteractionHandler.ButtonId, ButtonStyle.Secondary); }
-        var components = buttons.Build();
+        var components = BackendPanel.Components();
         if (options.PanelMessageId != 0)
         {
             var message = await channel.GetMessageAsync(options.PanelMessageId, options: requests);
@@ -34,7 +29,7 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
                 if (message is not RestUserMessage editable) { throw new SetupFailure("No se pudo editar el panel existente."); }
                 await editable.ModifyAsync(properties =>
                 {
-                    properties.Content = "Liro: control del backend de desarrollo. Iniciar reinicia si ya esta activo. Estado comprueba AppHost y API. Aspire solo para el propietario.";
+                    properties.Content = BackendPanel.Content(Hosting.StartupStatus.Unknown);
                     properties.Components = components;
                     properties.AllowedMentions = AllowedMentions.None;
                 }, requests);
@@ -42,7 +37,7 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
             }
         }
 
-        var panel = await channel.SendMessageAsync("Liro: acceso al catalogo de desarrollo por red local. Solo para el rol autorizado.",
+        var panel = await channel.SendMessageAsync(BackendPanel.Content(Hosting.StartupStatus.Unknown),
             components: components, allowedMentions: AllowedMentions.None, options: requests);
         options.PanelMessageId = panel.Id;
         options.Save(localDirectory);

@@ -10,6 +10,7 @@ public sealed class AgentOptions
     public ulong ChannelId { get; set; }
     public ulong RoleId { get; set; }
     public ulong OwnerUserId { get; set; }
+    public bool ShareAspireInChannel { get; set; }
     public ulong PanelMessageId { get; set; }
     public int? InterfaceIndex { get; set; }
     public string? DockerDesktopPath { get; set; }

@@ -9,6 +9,12 @@ internal static class StartupTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("Estado realiza una sola resolución y una sola comprobación de API", async () =>
+        {
+            var fake = new RuntimeFake { State = AppHostState.Running, Ready = true };
+            var result = await Coordinator(fake).GetStatusAsync(default);
+            Assert(result.Status == StartupStatus.Ready && fake.Resolves == 1 && fake.Probes == 1);
+        });
         suite.AsyncTest("Restart stops running backend before starting and returns ready URL", async () =>
         {
             var fake = new RuntimeFake { Ready = true, DockerReady = true, State = AppHostState.Running };
@@ -183,10 +189,11 @@ internal static class StartupTests
         public TaskCompletionSource Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<LanEndpoint> ResolveAsync(CancellationToken token)
         {
-            var address = ChangeNetwork && ++Resolves > 1 ? "192.168.50.11" : "192.168.50.10";
+            Resolves++;
+            var address = ChangeNetwork && Resolves > 1 ? "192.168.50.11" : "192.168.50.10";
             return Task.FromResult(new LanEndpoint(new Uri($"http://{address}:5205/"), address, 24, 1));
         }
-        public Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken token) => Task.FromResult(Ready || ++Probes >= ReadyAfterProbes);
+        public Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken token) { Probes++; return Task.FromResult(Ready || Probes >= ReadyAfterProbes); }
         public Task<bool> IsDockerReadyAsync(CancellationToken token) => Task.FromResult(DockerReady || ++DockerChecks >= DockerReadyAfterChecks);
         public Task<bool> IsDockerDesktopRunningAsync(CancellationToken token) => Task.FromResult(DesktopOpen || DockerReady);
         public Task StartDockerDesktopAsync(CancellationToken token) { DockerStarts++; DockerReady = true; Order.Add("docker"); return Task.CompletedTask; }

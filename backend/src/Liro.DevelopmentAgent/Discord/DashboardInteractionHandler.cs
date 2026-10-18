@@ -7,6 +7,24 @@ public sealed class DashboardInteractionHandler(AgentOptions options, IDashboard
 {
     public const string ButtonId = "liro:development:owner-dashboard:v1";
 
+    public async Task<string> AppendToStartupAsync(string message, ulong userId, CancellationToken cancellationToken)
+    {
+        if (!options.ShareAspireInChannel && (options.OwnerUserId == 0 || userId != options.OwnerUserId)) { return message; }
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            var login = await dashboard.GetLoginAsync(deadline.Token);
+            return message + (login is null
+                ? "\nPanel Aspire: no se encontró el acceso de la sesión activa."
+                : $"\nTu panel Aspire: <{login.AbsoluteUri}>");
+        }
+        catch (Exception)
+        {
+            return message + "\nNo se pudo obtener el enlace de Aspire. La información de la API se conserva.";
+        }
+    }
+
     public async Task HandleAsync(ButtonRequest request, ulong userId, IButtonReply reply, CancellationToken cancellationToken)
     {
         var authorized = options.OwnerUserId != 0 && userId == options.OwnerUserId

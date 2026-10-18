@@ -1,6 +1,6 @@
 namespace Liro.DevelopmentAgent.Diagnostics;
 
-public enum AgentEvent { Starting, Connected, Disconnected, Rejected, Ready, DockerStarting, BackendStarting, Failed, Stopped, PanelInstalled }
+public enum AgentEvent { Starting, Connected, Disconnected, Rejected, Ready, DockerStarting, BackendStarting, Failed, Stopped, PanelInstalled, PanelCheckTimedOut, PanelCheckFailed, PanelUpdated, PanelUpdateFailed }
 
 // Only fixed event codes are accepted: no exception, URL, command output or token can enter the log.
 public sealed class LocalAgentLog(string localDirectory)

@@ -54,9 +54,23 @@ hace falta. No usa una cuenta administrativa ni guarda la contrasena Windows.
 ## Funcionamiento
 
 - Solo acepta botones del mensaje, canal y servidor configurados y usuarios con
-  el rol autorizado. Las respuestas con la URL son efimeras.
-- Si la API ya responde y sus dependencias estan listas, devuelve la URL.
-- En otro caso espera Docker o abre Desktop si esta cerrado, luego inicia Liro.
+  el rol autorizado. Los datos de conexión son un mensaje normal en ese canal.
+  Se conservan al cerrar Discord o el agente, se actualizan sin duplicarse al
+  reiniciar el backend y solo se eliminan tras un Stop confirmado. El identificador
+  del mensaje se guarda en connection-message.json; no se guardan allí URLs ni tokens.
+- `Iniciar / reiniciar API` reinicia el backend si ya está activo y devuelve la URL
+  cuando la API está lista. `Stop` detiene el backend y conserva Docker.
+- El mensaje compartido muestra un icono y texto de estado: verde para API lista,
+  rojo para detenido, amarillo para transiciones, naranja para API no disponible y
+  blanco para estado sin confirmar. Todos ven el mismo estado; no depende de quién pulsó.
+- Comprueba AppHost y API con un temporizador de 15 segundos y al ejecutar acciones.
+  Edita el mismo mensaje con el estado y la hora de comprobación. Una consulta lenta
+  puede retrasar una vuelta; no se superponen comprobaciones. Un fallo no conserva
+  indefinidamente el estado «reiniciando»: se muestra estado sin confirmar.
+  Si el agente se desconecta, no puede actualizar Discord: revisar la fecha visible.
+- Al arrancar el agente actualiza el panel existente y deja solo los dos botones;
+  no hace falta volver a publicar el mensaje ni reiniciar el backend.
+- Si hace falta, espera Docker o abre Desktop si está cerrado, luego inicia Liro.
 - No duplica un arranque activo. Si encuentra un AppHost manual, espera su
   disponibilidad; si esta en modo incompatible, pide revisarlo en la PC.
 - El arranque tiene limite de 8 minutos y una pausa de 30 segundos tras fallar.
@@ -70,8 +84,8 @@ compartirlos sin retirar el enlace de acceso al Dashboard.
 
 ## Prueba manual
 
-Probar primero con API LAN ya lista. Pulsar el boton desde una cuenta con rol y
-confirmar que devuelve la URL sin abrir procesos nuevos. Abrir esa URL desde otro
+Probar primero con API LAN ya lista. Pulsar el botón desde una cuenta con rol y
+confirmar que reinicia y devuelve la URL cuando está disponible. Abrir esa URL desde otro
 equipo y consultar un articulo existente. Probar con dos pulsaciones, con Liro
 detenido, y finalmente con Docker Desktop cerrado. Una cuenta sin rol debe ser
 rechazada sin iniciar nada.
@@ -102,19 +116,33 @@ No copiar token.dpapi a otros usuarios: DPAPI lo vincula al usuario Windows.
 
 ## Panel Aspire del propietario
 
-El boton `Mi panel Aspire` solo acepta el usuario configurado en `OwnerUserId`,
-ademas del servidor, canal y mensaje esperados. No usa el rol de frontend como
-permiso para entregar el token. Las respuestas de ambos botones son privadas
-(ephemeral); el mensaje compartido conserva sus botones y no recibe el token.
+Ya no hay botón de Aspire. Con `ShareAspireInChannel=true`, autorizado expresamente
+para este canal privado, los datos de API y el enlace de Aspire se publican juntos
+en el mensaje persistente. Todos los que puedan leer ese canal tendrán el enlace.
+Se mantienen las validaciones de servidor, canal, mensaje y rol para los controles.
+Con false (valor predeterminado), el mensaje del canal contiene solo la API y Aspire
+se entrega al propietario en una respuesta privada de interacción.
 
-Actualizar con el agente detenido (`Uninstall` conserva configuracion y no detiene
-Liro ni Docker), ejecutar `Install`, `ConfigureOwner`, `InstallPanel` y `Run`.
+Los datos no repiten el estado del panel ni las indicaciones de red; incluyen un
+enlace de consulta con el artículo 97886188. Los mensajes antiguos efímeros no se
+pueden convertir en persistentes. Si la API ya está lista al iniciar el agente,
+la primera comprobación correcta crea o actualiza el mensaje sin reiniciar el backend.
+
+El estado reutiliza la dirección validada si permanece en la misma interfaz y
+subred local. No ejecuta dos veces PowerShell ni sondea dos veces la API por vuelta.
+Los inicios y reinicios conservan la validación completa de red y firewall.
+El registro distingue PanelUpdated, PanelCheckTimedOut, PanelCheckFailed y
+PanelUpdateFailed; no registra URLs ni tokens.
+
+Para actualizar un agente ya configurado, ejecutar `Install` y `Run`. Esto cambia
+solo el agente; no reinicia el backend ni Docker. Para cambiar el propietario,
+usar `ConfigureOwner` con el agente detenido.
 `ConfigureOwner` pide el ID de usuario Discord y lo guarda fuera del repositorio;
 0 desactiva el acceso. No cambia el token del bot. Ejecutar `InstallPanel` actualiza
 los botones del mensaje existente. Una reconfiguracion completa con `Configure`
 restablece esta opcion; configurar otra vez el propietario si se necesita.
 
-El boton consulta `aspire ps --format Json` de la cuenta Windows y selecciona solo
+La respuesta de inicio consulta `aspire ps --format Json` de la cuenta Windows y selecciona solo
 el AppHost de BackendPath, activo, con una unica URL de login HTTPS en loopback.
 No conserva tokens anteriores ni lee logs de Aspire. Si CLI no encuentra la sesion,
 no entrega un token. El enlace contiene el token de Aspire, no el token del bot.
@@ -125,4 +153,4 @@ Para ver el panel no hace falta arrancar Visual Studio. Si Liro ya fue iniciado
 por el agente, iniciar otro AppHost puede causar conflictos de puertos. Para
 inspeccionar codigo del proceso existente se puede adjuntar el depurador al proceso
 correspondiente; para iniciar desde Visual Studio hay que detener antes la instancia
-existente. El boton del panel no detiene ni reinicia servicios.
+existente. La consulta del enlace de Aspire no inicia una segunda instancia.

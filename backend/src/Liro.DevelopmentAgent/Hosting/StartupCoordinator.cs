@@ -59,8 +59,8 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
             var state = await runtime.GetAppHostStateAsync(cancellationToken);
             if (state == AppHostState.Stopped) { return new(StartupStatus.Stopped); }
             if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new(StartupStatus.Unknown); }
-            var endpoint = await network.ResolveAsync(cancellationToken);
-            if (await probe.IsReadyAsync(endpoint, cancellationToken)) { return await FinalizeAsync(endpoint, cancellationToken); }
+            var endpoint = await network.ResolveForStatusAsync(cancellationToken);
+            if (await probe.IsReadyAsync(endpoint, cancellationToken)) { return new(StartupStatus.Ready, endpoint.ApiBaseUri); }
             return new(state == AppHostState.Starting ? StartupStatus.Starting : StartupStatus.Unhealthy);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }

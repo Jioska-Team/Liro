@@ -10,14 +10,17 @@ public interface IButtonReply
     Task DeferAsync();
     Task DenyAsync();
     Task CompleteAsync(string message);
+    Task ShowConnectionsAsync(string sharedMessage, string privateMessage) => CompleteAsync(privateMessage);
+    Task ClearConnectionsAsync() => Task.CompletedTask;
 }
 
-public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator startup, LocalAgentLog log)
+public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator startup, LocalAgentLog log, DashboardInteractionHandler? dashboard = null)
 {
     public const string ButtonId = "liro:development:ensure-ready:v1";
 
     public const string StopButtonId = "liro:development:stop:v1";
     public const string StatusButtonId = "liro:development:status:v1";
+    public static string ConnectionDetails(Uri apiBaseUri) => $"Comprobar API: {new Uri(apiBaseUri, "api/lan/ready")}\nURL base para Angular: `{apiBaseUri}`\nConsultar artículo de ejemplo: {new Uri(apiBaseUri, "api/v1/items/by-asset/97886188")}";
 
     public bool IsAuthorized(ButtonRequest request)
     {
@@ -41,21 +44,25 @@ public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator
 
     public Task CompleteAsync(IButtonReply reply, CancellationToken cancellationToken) => CompleteAsync(ButtonId, reply, cancellationToken);
 
-    public async Task CompleteAsync(string action, IButtonReply reply, CancellationToken cancellationToken)
+    public async Task CompleteAsync(string action, IButtonReply reply, CancellationToken cancellationToken,
+        ulong userId = 0, Func<CancellationToken, Task>? refreshPanel = null)
     {
         try
         {
-            var result = action switch
+            var operation = action switch
             {
-                ButtonId => await startup.RestartAsync(cancellationToken),
-                StopButtonId => await startup.StopAsync(cancellationToken),
-                StatusButtonId => await startup.GetStatusAsync(cancellationToken),
+                ButtonId => startup.RestartAsync(cancellationToken),
+                StopButtonId => startup.StopAsync(cancellationToken),
+                StatusButtonId => startup.GetStatusAsync(cancellationToken),
                 _ => throw new InvalidOperationException("Accion no reconocida.")
             };
+            await RefreshAsync();
+            var result = await operation;
+            await RefreshAsync();
             var message = result.Status switch
             {
-                StartupStatus.Ready => $"🟢 Backend activo; API lista.\nComprobar API: {new Uri(result.ApiBaseUri!, "api/lan/ready")}\nURL base para Angular: `{result.ApiBaseUri}`\nConsultar item: `{new Uri(result.ApiBaseUri!, "api/v1/items/by-asset/")}ASSET_ID`\nAcceso solo desde la misma red local. La raiz / no es una pagina web.",
-                StartupStatus.Stopped => "⚫ Backend detenido. Docker Desktop permanece disponible.",
+                StartupStatus.Ready => ConnectionDetails(result.ApiBaseUri!),
+                StartupStatus.Stopped => "🔴 Backend detenido. Docker Desktop permanece disponible.",
                 StartupStatus.Busy => "Ya hay una operacion en curso. Espera a que termine y vuelve a intentarlo.",
                 StartupStatus.Starting => "🟡 Backend iniciando; la API todavia no esta lista.",
                 StartupStatus.Restarting => "🟡 Backend reiniciando.",
@@ -68,9 +75,23 @@ public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator
                 StartupStatus.AppHostUnavailable => "Liro no esta listo o ya existe una instancia incompatible. Revisa el equipo anfitrion.",
                 _ => "No se pudo completar la operacion. Revisa la configuracion local del agente, Docker y la regla LAN."
             };
+            if (action == ButtonId && result.Status == StartupStatus.Ready)
+            {
+                var combined = dashboard is null ? message : await dashboard.AppendToStartupAsync(message, userId, cancellationToken);
+                await reply.ShowConnectionsAsync(options.ShareAspireInChannel ? combined : message, combined);
+                return;
+            }
+            if (action == StopButtonId && result.Status == StartupStatus.Stopped) { await reply.ClearConnectionsAsync(); }
             await reply.CompleteAsync(message);
         }
         catch (Exception) { log.Write(AgentEvent.Failed); }
+
+        async Task RefreshAsync()
+        {
+            if (refreshPanel is null) { return; }
+            try { await refreshPanel(cancellationToken); }
+            catch (Exception) { log.Write(AgentEvent.Failed); }
+        }
     }
 }
 
