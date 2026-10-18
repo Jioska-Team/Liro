@@ -42,13 +42,6 @@ if (builder.Configuration.GetValue<bool>("MarketWorker:Launch"))
         .WithEnvironment("DOTNET_ENVIRONMENT", builder.Environment.EnvironmentName)
         .WithEnvironment("Market__Enabled", builder.Configuration.GetValue<bool>("MarketWorker:Enabled").ToString());
 }
-// Aspire owns this process, so stopping AppHost also stops recovery. The database
-// control remains authoritative: restarting must not override a 403/manual pause.
-builder.AddProject<Projects.Liro_HistoryRecovery>("history-recovery")
-    .WithReference(database)
-    .WaitFor(database)
-    .WithEnvironment("LIRO_HISTORY_CONNECTION", database.Resource.ConnectionStringExpression)
-    .WithArgs("archive-run", "--download", "--limit", "1000000");
 var app = builder.Build();
 app.Run();
 
