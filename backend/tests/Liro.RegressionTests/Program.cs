@@ -1,6 +1,7 @@
 using Liro.RegressionTests;
 
 var suite = new RegressionSuite();
+MarketTrackingTests.Register(suite);
 KnownWatchOrderingTests.Register(suite);
 GlobalBudgetTests.Register(suite);
 MainScanPriorityTests.Register(suite);

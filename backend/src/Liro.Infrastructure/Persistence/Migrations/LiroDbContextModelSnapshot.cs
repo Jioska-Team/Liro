@@ -270,6 +270,159 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.ToTable("ItemMarketState", (string)null);
                 });
 
+            modelBuilder.Entity("Liro.Infrastructure.Market.CatalogoGeneral", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Clave")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("CreadoPor")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Descripcion")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("FechaCreacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("FechaModificacion")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ModificadoPor")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("TipoDato")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Valor")
+                        .IsRequired()
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Tipo", "Clave")
+                        .IsUnique();
+
+                    b.ToTable("CatalogoGeneral", (string)null);
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketHistoryPoint", b =>
+                {
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("Metric")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("PeriodUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(28, 6)
+                        .HasColumnType("numeric(28,6)");
+
+                    b.HasKey("ItemId", "Source", "Metric", "PeriodUtc");
+
+                    b.ToTable("MarketHistoryPoints", (string)null);
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketRapSnapshot", b =>
+                {
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(28, 6)
+                        .HasColumnType("numeric(28,6)");
+
+                    b.HasKey("ItemId", "ObservedAtUtc");
+
+                    b.ToTable("MarketRapSnapshots", (string)null);
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketWatch", b =>
+                {
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Activity")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("DailySales")
+                        .HasPrecision(28, 6)
+                        .HasColumnType("numeric(28,6)");
+
+                    b.Property<DateTime?>("LastAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<DateTime?>("LastSuccessAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LeaseId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LeaseUntilUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("NextCheckAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RapObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("RecentAveragePrice")
+                        .HasPrecision(28, 6)
+                        .HasColumnType("numeric(28,6)");
+
+                    b.HasKey("ItemId");
+
+                    b.HasIndex("NextCheckAtUtc", "LeaseUntilUtc");
+
+                    b.ToTable("MarketWatches", (string)null);
+                });
+
             modelBuilder.Entity("Liro.Infrastructure.Persistence.CatalogCheckpointState", b =>
                 {
                     b.Property<string>("Scope")
@@ -457,6 +610,33 @@ namespace Liro.Infrastructure.Persistence.Migrations
                         .WithOne("MarketState")
                         .HasForeignKey("Liro.Domain.Catalog.Entities.ItemMarketState", "ItemId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketHistoryPoint", b =>
+                {
+                    b.HasOne("Liro.Domain.Catalog.Entities.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketRapSnapshot", b =>
+                {
+                    b.HasOne("Liro.Domain.Catalog.Entities.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketWatch", b =>
+                {
+                    b.HasOne("Liro.Domain.Catalog.Entities.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -21,6 +21,7 @@ public sealed class LiroDbContext(DbContextOptions<LiroDbContext> options) : DbC
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
+        ValidateGeneralCatalog();
         var marketItems = CaptureMarketSnapshots();
         var entities = CaptureEvents();
         var result = base.SaveChanges(acceptAllChangesOnSuccess);
@@ -32,12 +33,28 @@ public sealed class LiroDbContext(DbContextOptions<LiroDbContext> options) : DbC
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => SaveChangesAsync(true, cancellationToken);
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
+        ValidateGeneralCatalog();
         var marketItems = CaptureMarketSnapshots();
         var entities = CaptureEvents();
         var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         ClearEvents(entities);
         CompleteMarketSave(marketItems);
         return result;
+    }
+
+    private void ValidateGeneralCatalog()
+    {
+        foreach (var entry in ChangeTracker.Entries<Liro.Infrastructure.Market.CatalogoGeneral>()
+                     .Where(e => e.State is EntityState.Added or EntityState.Modified))
+        {
+            entry.Entity.FechaModificacion = DateTime.UtcNow;
+            if (entry.State == EntityState.Modified)
+            {
+                entry.Property(e => e.FechaCreacion).IsModified = false;
+                entry.Property(e => e.CreadoPor).IsModified = false;
+            }
+            entry.Entity.Validate();
+        }
     }
 
     private List<Item> CaptureMarketSnapshots()

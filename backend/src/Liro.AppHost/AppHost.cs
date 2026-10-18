@@ -35,5 +35,12 @@ if (builder.Configuration.GetValue<bool>("Lan:Enabled"))
     }
 }
 builder.AddProject<Projects.Liro_Workers>("workers").WithReference(database).WithReference(valkey).WaitFor(database).WaitFor(valkey);
+if (builder.Configuration.GetValue<bool>("MarketWorker:Launch"))
+{
+    builder.AddProject<Projects.Liro_MarketWorker>("market-worker")
+        .WithReference(database).WithReference(valkey).WaitFor(database).WaitFor(valkey)
+        .WithEnvironment("Market__Enabled", builder.Configuration.GetValue<bool>("MarketWorker:Enabled").ToString());
+}
 var app = builder.Build();
 app.Run();
+
