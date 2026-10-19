@@ -241,6 +241,7 @@ public sealed class Item : IHasDomainEvents
             return;
         }
 
+        var changed = MarketState is null || MarketState.Data != data;
         if (MarketState is null)
         {
             MarketState = new ItemMarketState(Id, data, observedAtUtc, source);
@@ -250,7 +251,8 @@ public sealed class Item : IHasDomainEvents
             MarketState.Update(data, observedAtUtc, source);
         }
 
-        _pendingMarketSnapshots.Add(new ItemMarketSnapshot(MarketState));
+        // Always retain freshness and source, but only append a data change to history.
+        if (changed) _pendingMarketSnapshots.Add(new ItemMarketSnapshot(MarketState));
     }
 
     public void MarkMarketPersisted()

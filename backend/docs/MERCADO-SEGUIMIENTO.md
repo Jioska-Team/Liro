@@ -71,15 +71,23 @@ Se reserva el pendiente con fecha más antigua mediante `FOR UPDATE SKIP LOCKED`
 evita consultas duplicadas y se recupera tras cinco minutos si el proceso termina. Solo la
 reserva vigente puede guardar; la transacción escribe historial y estado juntos.
 
-Primera versión conservadora: una petición activa por proceso; máximo global de MERCADO de
-18 por 60 segundos y separación de 3 segundos, además del límite por conexión (plantilla: 6).
+El trabajador admite hasta cinco consultas en curso, como máximo una por dirección de proxy.
+La cola de PostgreSQL reserva artículos distintos; cada consulta tiene su propio contexto de
+base de datos. Las reservas y los guardados del trabajador pasan por una única puerta de
+escritura. Las direcciones equivalentes se deduplican aunque tengan claves distintas.
+
+El presupuesto conjunto de MERCADO se despliega por etapas de 18, 24 y 30 solicitudes en
+60 segundos, con cinco proxies limitados inicialmente a 6 cada uno. Las salidas se escalonan
+cada 60/presupuesto segundos: 3,33; 2,5; y 2 segundos, respectivamente. Esta separación es
+entre inicios: no se espera la respuesta de un proxy para iniciar el siguiente. Cada proxy
+conserva al menos 3 segundos entre consultas. El presupuesto de catálogo no se modifica.
 Las reservas de Valkey incluyen peticiones en curso y la ventana después de su finalización.
 Usa exclusivamente claves `liro:{market}:...`; no consume ni reinicia `liro:{roblox}:...`.
 Los límites de todas las instancias deben configurarse iguales. No se presume que más IPs
 otorguen cuotas independientes en Roblox. No se promete cumplir intervalos de 2 minutos
 para todos con este presupuesto; consultar el atraso en Diagnostico-Mercado.sql.
 
-Un 429 respeta Retry-After (segundos o fecha). Si falta, espera un minuto. Se aplica un
+Un 403 o 429 respeta Retry-After (segundos o fecha). Si falta, espera un minuto. Se aplica un
 enfriamiento compartido a TODO el mercado para no eludir la espera cambiando de proxy.
 Los errores no vacían el RAP. Otros fallos reintentan con espera creciente hasta 180 minutos,
 sin descarte permanente. No se reintenta HTTP de forma oculta. Una respuesta vacía o inválida
@@ -103,3 +111,21 @@ de red no garantiza impacto cero al habilitarlo. Medir antes de ampliar capacida
 No incluye todavía API pública de RAP, gráficas, SignalR de mercado, cálculo de demanda/valoración,
 administrador web de CatalogoGeneral ni migración de otras constantes. La lectura de precios
 existente sigue funcionando. No activar contra Roblox sin configurar y probar primero las salidas.
+
+## Recomendación de ampliación
+
+Mantener cinco proxies y validar cada etapa antes de aumentar el presupuesto. Comparar
+solicitudes efectivas en ventanas móviles de 60 segundos, respuestas 403/429, duración de
+la principal y conocidos, y bloqueos de PostgreSQL. Si aparecen errores de mercado o una
+degradación sostenida, no avanzar: reducir el presupuesto de mercado y respetar la espera
+del proveedor. Este ascenso es supervisado, no una escalada automática al reiniciar.
+
+La recomendación para una ampliación posterior a diez proxies es repetir esta validación;
+no asumir cuotas independientes por IP ni prometer tiempos teóricos. El límite validado de
+configuración permite hasta 60 solicitudes por minuto y diez consultas simultáneas, pero
+eso no habilita automáticamente esas capacidades ni incorpora proxies nuevos.
+
+Las trazas de solicitud registran un identificador opaco de ruta y el identificador del
+coleccionable para auditar cuotas y repeticiones sin exponer credenciales. Los guardados
+incluyen la clave de conexión. El número de puntos mostrado en la respuesta no equivale
+a inserciones: los valores históricos idénticos no se vuelven a escribir.

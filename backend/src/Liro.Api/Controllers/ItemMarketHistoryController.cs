@@ -17,7 +17,7 @@ public sealed class ItemMarketHistoryController(ItemService items, IItemMarketHi
             return BadRequest(new ProblemDetails { Status = 400, Title = "Limit must be between 1 and 200." });
         }
 
-        if (await items.GetByIdAsync(id, cancellationToken) is null)
+        if (!await items.ExistsByIdAsync(id, cancellationToken))
         {
             return NotFound();
         }

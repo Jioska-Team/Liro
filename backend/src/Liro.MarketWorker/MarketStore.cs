@@ -24,16 +24,74 @@ public sealed class MarketStore(LiroDbContext db)
         ON CONFLICT ("ItemId") DO NOTHING
         """, ct);
 
-    public async Task<MarketClaim?> ClaimAsync(CancellationToken ct)
+    public Task<List<MarketPopulation>> PopulationAsync(CancellationToken ct) => db.Database.SqlQueryRaw<MarketPopulation>("""
+        SELECT w."Activity", COUNT(*)::int AS "Count" FROM "MarketWatches" w JOIN "Items" i ON i."Id"=w."ItemId"
+        WHERE i."CreatorId"=1 AND i."CreatorType"='User' AND i."MarketStatus" IN ('Limited','LimitedUnique')
+          AND i."CollectibleItemId" IS NOT NULL GROUP BY w."Activity"
+        """).ToListAsync(ct);
+
+    public Task<List<MarketActivityEvidence>> ActivityEvidenceAsync(DateTime asOf, Guid? itemId, CancellationToken ct)
+        => db.Database.SqlQuery<MarketActivityEvidence>($"""
+            SELECT w."ItemId", w."LastSuccessAtUtc", r."CompletedDays", r."WeeklySales", r."HasRecent",
+                EXISTS(SELECT 1 FROM "MarketHistoryPoints" h WHERE h."ItemId"=w."ItemId"
+                    AND h."Source"='marketplace-sales' AND h."Metric"='VolumenVentas') AS "HasHistory"
+            FROM "MarketWatches" w JOIN "Items" i ON i."Id"=w."ItemId"
+            CROSS JOIN LATERAL (
+                SELECT COUNT(*) FILTER(WHERE (h."PeriodUtc" AT TIME ZONE 'UTC')::time='00:00:00')::int AS "CompletedDays",
+                    COALESCE(SUM(h."Value") FILTER(WHERE (h."PeriodUtc" AT TIME ZONE 'UTC')::time='00:00:00'),0) AS "WeeklySales",
+                    COUNT(*)>0 AS "HasRecent"
+                FROM "MarketHistoryPoints" h WHERE h."ItemId"=w."ItemId" AND h."Source"='marketplace-sales'
+                    AND h."Metric"='VolumenVentas' AND h."PeriodUtc">={asOf.Date.AddDays(-7)} AND h."PeriodUtc"<{asOf.Date}
+            ) r
+            WHERE ({itemId}::uuid IS NULL OR w."ItemId"={itemId}) AND i."CreatorId"=1 AND i."CreatorType"='User'
+                AND i."MarketStatus" IN ('Limited','LimitedUnique') AND i."CollectibleItemId" IS NOT NULL
+            """).ToListAsync(ct);
+
+    public async Task<int> ReclassifyAsync(DateTime asOf, CancellationToken ct)
+    {
+        var evidence = await ActivityEvidenceAsync(asOf, null, ct);
+        var changed = 0;
+        foreach (var batch in evidence.Chunk(120))
+        {
+            var ids = batch.Select(x => x.ItemId).ToArray();
+            var last = batch.Select(x => x.LastSuccessAtUtc).ToArray();
+            var activities = batch.Select(x => x.Activity).ToArray();
+            var daily = batch.Select(x => x.ExactDailySales).ToArray();
+            changed += await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE "MarketWatches" w SET "Activity"=e.activity, "DailySales"=round(e.daily,6)
+                FROM unnest({ids}::uuid[],{last}::timestamptz[],{activities}::text[],{daily}::numeric[]) e(id,last,activity,daily)
+                WHERE w."ItemId"=e.id AND w."LastSuccessAtUtc" IS NOT DISTINCT FROM e.last
+                    AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc"<=NOW())
+                    AND (w."Activity" IS DISTINCT FROM e.activity OR w."DailySales" IS DISTINCT FROM round(e.daily,6))
+                """, ct);
+            await Task.Delay(25, ct);
+        }
+        return changed;
+    }
+
+    public async Task<MarketClaim?> ClaimAsync(CancellationToken ct, bool preferBackground = false, MarketOptions? schedule = null)
     {
         var lease = Guid.NewGuid();
+        var plan = schedule ?? new MarketOptions();
         var rows = await db.Database.SqlQuery<MarketClaim>($"""
             WITH candidate AS (
                 SELECT w."ItemId" FROM "MarketWatches" w JOIN "Items" i ON i."Id" = w."ItemId"
-                WHERE w."NextCheckAtUtc" <= NOW() AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc" <= NOW())
+                CROSS JOIN LATERAL (SELECT CASE
+                    WHEN {schedule != null} AND w."LastSuccessAtUtc" IS NOT NULL
+                        AND (w."LastErrorCode" IS NULL OR w."LastErrorCode" LIKE 'Cupo%')
+                    THEN w."LastSuccessAtUtc" + INTERVAL '1 minute' * CASE w."Activity"
+                        WHEN 'MuyAlta' THEN {plan.VeryActiveMinutes} WHEN 'Alta' THEN {plan.ActiveMinutes}
+                        WHEN 'Media' THEN {plan.NormalMinutes} WHEN 'Inactiva' THEN {plan.InactiveMinutes}
+                        WHEN 'SinVentasRecientes' THEN {plan.InactiveMinutes}
+                        WHEN 'InciertaReciente' THEN {plan.UncertainMinutes}
+                        WHEN 'SinHistorial' THEN {plan.MissingHistoryMinutes} WHEN 'SinDatos' THEN {plan.MissingHistoryMinutes}
+                        ELSE {plan.LowMinutes} END
+                    ELSE w."NextCheckAtUtc" END AS due) q
+                WHERE q.due <= NOW() AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc" <= NOW())
                   AND i."CreatorId" = 1 AND i."CreatorType" = 'User'
                   AND i."MarketStatus" IN ('Limited', 'LimitedUnique') AND i."CollectibleItemId" IS NOT NULL
-                ORDER BY w."NextCheckAtUtc", w."ItemId" FOR UPDATE OF w SKIP LOCKED LIMIT 1
+                ORDER BY CASE WHEN (w."Activity" IN ('MuyAlta','Alta')) = {!preferBackground} THEN 0 ELSE 1 END,
+                    q.due, w."ItemId" FOR UPDATE OF w SKIP LOCKED LIMIT 1
             ), claimed AS (
                 UPDATE "MarketWatches" w SET "LeaseId" = {lease}, "LeaseUntilUtc" = NOW() + INTERVAL '5 minutes',
                     "LastAttemptAtUtc" = NOW()
@@ -53,14 +111,16 @@ public sealed class MarketStore(LiroDbContext db)
         var watch = rows.SingleOrDefault();
         if (watch is null) return false;
         if (watch.LastSuccessAtUtc > observation.ObservedAtUtc) return false;
-        foreach (var group in observation.Points.GroupBy(p => p.Metric))
+        if (observation.Points.Count > 0)
         {
-            var dates = group.Select(p => p.PeriodUtc).ToArray();
-            var values = group.Select(p => p.Value).ToArray();
+            var points = observation.Points.OrderBy(p => p.Metric, StringComparer.Ordinal).ThenBy(p => p.PeriodUtc).ToArray();
+            var metrics = points.Select(p => p.Metric).ToArray();
+            var dates = points.Select(p => p.PeriodUtc).ToArray();
+            var values = points.Select(p => p.Value).ToArray();
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "MarketHistoryPoints" ("ItemId", "Source", "Metric", "PeriodUtc", "Value", "ObservedAtUtc")
-                SELECT {claim.ItemId}, 'marketplace-sales', {group.Key}, p.period, p.value, {observation.ObservedAtUtc}
-                FROM unnest({dates}::timestamptz[], {values}::numeric[]) AS p(period, value)
+                SELECT {claim.ItemId}, 'marketplace-sales', p.metric, p.period, p.value, {observation.ObservedAtUtc}
+                FROM unnest({metrics}::text[], {dates}::timestamptz[], {values}::numeric[]) AS p(metric, period, value)
                 ON CONFLICT ("ItemId", "Source", "Metric", "PeriodUtc") DO UPDATE
                 SET "Value"=EXCLUDED."Value", "ObservedAtUtc"=EXCLUDED."ObservedAtUtc"
                 WHERE "MarketHistoryPoints"."ObservedAtUtc" <= EXCLUDED."ObservedAtUtc"
@@ -74,10 +134,10 @@ public sealed class MarketStore(LiroDbContext db)
             watch.RecentAveragePrice = rap;
             watch.RapObservedAtUtc = observation.ObservedAtUtc;
         }
-        watch.DailySales = observation.DailySales();
-        var schedule = options.Schedule(watch.DailySales);
-        watch.Activity = schedule.Activity;
-        watch.NextCheckAtUtc = observation.ObservedAtUtc + schedule.Interval;
+        var evidence = (await ActivityEvidenceAsync(observation.ObservedAtUtc, claim.ItemId, ct)).Single();
+        watch.DailySales = evidence.ExactDailySales;
+        watch.Activity = evidence.Activity;
+        watch.NextCheckAtUtc = observation.ObservedAtUtc + options.IntervalFor(evidence.Activity);
         watch.LastSuccessAtUtc = observation.ObservedAtUtc;
         watch.ConsecutiveFailures = 0;
         watch.LastErrorCode = null;
@@ -89,11 +149,14 @@ public sealed class MarketStore(LiroDbContext db)
 
     public Task<int> ReleaseAsync(MarketClaim claim, string code, TimeSpan minimumDelay, bool failure, CancellationToken ct)
         => db.Database.ExecuteSqlInterpolatedAsync($"""
-            UPDATE "MarketWatches" SET "LeaseId"=NULL, "LeaseUntilUtc"=NULL, "LastErrorCode"={code},
+            UPDATE "MarketWatches" SET "LeaseId"=NULL,
+              "LeaseUntilUtc"=CASE WHEN {code.StartsWith("Cupo", StringComparison.Ordinal)} THEN NOW() + {minimumDelay} ELSE NULL END,
+              "LastErrorCode"={code},
               "ConsecutiveFailures"="ConsecutiveFailures" + { (failure ? 1 : 0) },
-              "NextCheckAtUtc"=NOW() + GREATEST({minimumDelay},
+              "NextCheckAtUtc"=CASE WHEN {code.StartsWith("Cupo", StringComparison.Ordinal)} THEN "NextCheckAtUtc"
+              ELSE NOW() + GREATEST({minimumDelay},
                 CASE WHEN {failure} THEN INTERVAL '1 minute' * LEAST(180, power(2, LEAST("ConsecutiveFailures", 8)))
-                ELSE INTERVAL '0 seconds' END)
+                ELSE INTERVAL '0 seconds' END) END
             WHERE "ItemId"={claim.ItemId} AND "LeaseId"={claim.LeaseId}
             """, ct);
 }

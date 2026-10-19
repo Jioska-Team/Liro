@@ -13,6 +13,9 @@ public sealed class ItemService
         _repository = repository;
     }
 
+    public Task<bool> ExistsByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => _repository.ExistsByIdAsync(id, cancellationToken);
+
     public Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         return _repository.GetByIdAsync(id, cancellationToken);

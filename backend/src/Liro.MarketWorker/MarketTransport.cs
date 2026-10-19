@@ -4,6 +4,7 @@ using System.Text;
 using Liro.Infrastructure.Roblox;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Collections.Concurrent;
 
 namespace Liro.MarketWorker;
 
@@ -14,9 +15,11 @@ public sealed class MarketHttpException(string code, TimeSpan delay, bool limite
     public bool Limited { get; } = limited;
 }
 
-public sealed class MarketTransport(IConfiguration configuration, IConnectionMultiplexer redis, IOptions<MarketOptions> settings)
+public sealed class MarketTransport(IConfiguration configuration, IConnectionMultiplexer redis, IOptions<MarketOptions> settings,
+    ILogger<MarketTransport>? logger = null)
 {
-    private readonly Dictionary<string, RedisRobloxRequestBudget> budgets = [];
+    private readonly ConcurrentDictionary<string, RedisRobloxRequestBudget> budgets = new();
+    private readonly MarketDispatchGate dispatch = new();
     private const string CooldownKey = "liro:{market}:cooldown";
 
     public static HttpClient CreateProxyClient(MarketProxy proxy, IConfiguration configuration)
@@ -40,27 +43,31 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
     {
         // Validate credentials before reserving capacity; never fall back to direct networking.
         using var http = CreateProxyClient(proxy, configuration);
-        var cooldown = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey);
-        if (cooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProveedor", cooldown.Value, true);
-        var normalized = new Uri(proxy.Address).GetComponents(UriComponents.SchemeAndServer, UriFormat.Unescaped);
+        var normalized = MarketProxy.RouteKey(proxy.Address);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
-        var route = Budget("liro:{market}:route:" + hash, proxy.RequestsPerMinute);
-        var global = Budget("liro:{market}:global", settings.Value.RequestsPerMinute);
+        var route = Budget("liro:{market}:route:" + hash, proxy.RequestsPerMinute, TimeSpan.FromSeconds(3));
+        var global = Budget("liro:{market}:global", settings.Value.RequestsPerMinute, TimeSpan.Zero);
         var id = Guid.NewGuid().ToString("N");
         var acquiredRoute = false;
         var acquiredGlobal = false;
         try
         {
-            var delay = await route.TryAcquireAsync(id, ct);
-            if (delay > TimeSpan.Zero) throw new MarketHttpException("CupoConexion", delay);
-            acquiredRoute = true;
-            delay = await global.TryAcquireAsync(id, ct);
-            if (delay > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", delay);
-            acquiredGlobal = true;
-            using var response = await http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct);
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            using var response = await dispatch.RunAsync(TimeSpan.FromSeconds(60d / settings.Value.RequestsPerMinute), async () =>
             {
-                delay = RetryDelay(response, DateTimeOffset.UtcNow);
+                var cooldown = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey);
+                if (cooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProveedor", cooldown.Value, true);
+                var wait = await route.TryAcquireAsync(id, ct);
+                if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoConexion", wait);
+                acquiredRoute = true;
+                wait = await global.TryAcquireAsync(id, ct);
+                if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait);
+                acquiredGlobal = true;
+                logger?.LogInformation("Solicitud de mercado: ruta {Route}; artículo {Item}; presupuesto {Budget} por minuto.", hash[..12], collectibleId, settings.Value.RequestsPerMinute);
+                return http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct);
+            }, ct);
+            if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
+            {
+                var delay = RetryDelay(response, DateTimeOffset.UtcNow);
                 // A provider cooldown applies to the whole market pool; changing proxies cannot bypass it.
                 await redis.GetDatabase().ScriptEvaluateAsync("""
                     local ttl = redis.call('PTTL', KEYS[1])
@@ -68,7 +75,7 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                     if ttl < requested then redis.call('PSETEX', KEYS[1], requested, '1') end
                     return 1
                     """, [CooldownKey], [(long)Math.Ceiling(delay.TotalMilliseconds)]);
-                throw new MarketHttpException("HTTP429", delay, true);
+                throw new MarketHttpException("HTTP" + (int)response.StatusCode, delay, response.StatusCode == HttpStatusCode.TooManyRequests);
             }
             if (!response.IsSuccessStatusCode) throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
             return ResaleObservation.Parse(await response.Content.ReadAsStringAsync(ct), DateTime.UtcNow);
@@ -94,18 +101,13 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         return delay > TimeSpan.FromSeconds(3) ? delay : TimeSpan.FromSeconds(3);
     }
 
-    private RedisRobloxRequestBudget Budget(string key, int capacity)
+    private RedisRobloxRequestBudget Budget(string key, int capacity, TimeSpan spacing)
     {
         // Configuration reloads must not clear Redis accounting.
-        var cacheKey = key + ":" + capacity;
-        if (!budgets.TryGetValue(cacheKey, out var value))
-        {
-            if (budgets.Count > 128) budgets.Clear();
-            budgets[cacheKey] = value = new(redis, Options.Create(new RobloxRequestOptions
+        var cacheKey = key + ":" + capacity + ":" + spacing.Ticks;
+        return budgets.GetOrAdd(cacheKey, _ => new(redis, Options.Create(new RobloxRequestOptions
             {
-                BudgetKey = key, BudgetCapacity = capacity, BudgetWindow = TimeSpan.FromMinutes(1), MinimumInterval = TimeSpan.FromSeconds(3)
-            }));
-        }
-        return value;
+                BudgetKey = key, BudgetCapacity = capacity, BudgetWindow = TimeSpan.FromMinutes(1), MinimumInterval = spacing
+            })));
     }
 }

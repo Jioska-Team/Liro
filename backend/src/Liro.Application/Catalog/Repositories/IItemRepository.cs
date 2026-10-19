@@ -7,6 +7,8 @@ namespace Liro.Application.Catalog.Repositories;
 public interface IItemRepository
 {
     Task<bool> IsOfficialBundleComponentAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    async Task<bool> ExistsByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => await GetByIdAsync(id, cancellationToken) is not null;
     Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<Item?> GetByAssetIdAsync(long robloxAssetId, CancellationToken cancellationToken = default);
     Task<bool> ExistsByAssetIdAsync(long robloxAssetId, CancellationToken cancellationToken = default);

@@ -14,6 +14,9 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         key.Type != CatalogItemType.Asset ? Task.FromResult(false) : dbContext.Items.AnyAsync(b =>
             b.ItemType == CatalogItemType.Bundle && b.CreatorId == 1 && b.CreatorType == "User"
             && b.BundleComponentAssetIds.Contains(key.Id), cancellationToken);
+    public Task<bool> ExistsByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        => dbContext.Items.AnyAsync(x => x.Id == id, cancellationToken);
+
     public async Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var item = await dbContext.Items

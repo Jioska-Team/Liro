@@ -44,6 +44,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<Liro.Application.Catalog.Services.ICatalogCheckpointStore, CatalogCheckpointStore>();
         builder.Services.AddScoped<Liro.Application.Catalog.Services.ICatalogImportFailureStore, CatalogImportFailureStore>();
         builder.Services.AddScoped<IItemMarketHistoryRepository, ItemMarketHistoryRepository>();
+        builder.Services.AddScoped<IItemMarketSummaryRepository, ItemMarketSummaryRepository>();
         builder.Services.AddHostedService<DatabaseInitializationService>();
         builder.AddNpgsqlDbContext<LiroDbContext>("lirodb");
         builder.AddRedisClient("valkey");

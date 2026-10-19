@@ -7,14 +7,22 @@ public sealed class MarketOptions
 {
     public bool Enabled { get; set; }
     public int RequestsPerMinute { get; set; } = 18;
+    public int MaxConcurrentRequests { get; set; } = 5;
     public int VeryActiveMinutes { get; set; } = 2;
     public int ActiveMinutes { get; set; } = 3;
     public int NormalMinutes { get; set; } = 30;
     public int LowMinutes { get; set; } = 120;
     public int InactiveMinutes { get; set; } = 180;
-    public bool IsValid() => RequestsPerMinute is >= 1 and <= 18 && VeryActiveMinutes >= 2
+    public int UncertainMinutes { get; set; } = 30;
+    public int MissingHistoryMinutes { get; set; } = 15;
+    public TimeSpan IntervalFor(string activity) => TimeSpan.FromMinutes(activity switch {
+        "MuyAlta" => VeryActiveMinutes, "Alta" => ActiveMinutes, "Media" => NormalMinutes,
+        "InciertaReciente" => UncertainMinutes, "SinHistorial" or "SinDatos" => MissingHistoryMinutes,
+        "Inactiva" or "SinVentasRecientes" => InactiveMinutes, _ => LowMinutes
+    });
+    public bool IsValid() => RequestsPerMinute is >= 1 and <= 60 && MaxConcurrentRequests is >= 1 and <= 10 && VeryActiveMinutes >= 2
         && ActiveMinutes >= VeryActiveMinutes && NormalMinutes >= ActiveMinutes
-        && LowMinutes >= NormalMinutes && InactiveMinutes >= LowMinutes && InactiveMinutes <= 1440;
+        && LowMinutes >= NormalMinutes && InactiveMinutes >= LowMinutes && InactiveMinutes <= 1440 && UncertainMinutes >= 1 && MissingHistoryMinutes >= 1;
     public (string Activity, TimeSpan Interval) Schedule(decimal? dailySales) => dailySales switch
     {
         null => ("SinDatos", TimeSpan.FromMinutes(LowMinutes)),
@@ -28,6 +36,7 @@ public sealed class MarketOptions
 
 public sealed record MarketProxy(string Address, string SecretReference, int RequestsPerMinute = 6)
 {
+    public static string RouteKey(string address) => new Uri(address).GetComponents(UriComponents.SchemeAndServer, UriFormat.Unescaped);
     public static MarketProxy Parse(CatalogoGeneral entry)
     {
         entry.Validate();
