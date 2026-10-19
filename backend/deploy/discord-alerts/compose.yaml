@@ -1,0 +1,24 @@
+services:
+  discord-alerts:
+    build:
+      context: ../..
+      dockerfile: deploy/discord-alerts/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      DOTNET_ENVIRONMENT: ${DOTNET_ENVIRONMENT:?Set Staging or Production}
+      Alerts__ApplicationId: ${Alerts__ApplicationId:?Required}
+      Alerts__GuildId: ${Alerts__GuildId:?Required}
+      Alerts__ChannelId: ${Alerts__ChannelId:?Required}
+      Alerts__BotToken: ${Alerts__BotToken:?Required}
+      Alerts__WebshareApiKey: ${Alerts__WebshareApiKey:?Required}
+      Alerts__StateDirectory: /var/lib/liro-alerts
+    volumes:
+      - alerts-state:/var/lib/liro-alerts
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  alerts-state:

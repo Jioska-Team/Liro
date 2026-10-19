@@ -20,10 +20,10 @@ Discord limita los tokens de interaccion a 15 minutos. Las respuestas anteriores
 Desde PowerShell normal, en la carpeta `backend`, cuando no haya una operacion del bot en curso:
 
 ```powershell
-.\Setup-DevelopmentAgent.ps1 -Action StopAgent
-.\Setup-DevelopmentAgent.ps1 -Action Install
-.\Setup-DevelopmentAgent.ps1 -Action InstallPanel
-.\Setup-DevelopmentAgent.ps1 -Action Run
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action StopAgent
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Install
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action InstallPanel
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Run
 ```
 
 En `InstallPanel`, escribir `PUBLICAR` actualiza el mensaje existente. No hace falta volver a configurar IDs o token. StopAgent solo cierra el agente instalado; no detiene el backend. Si el agente se ejecuta como tarea programada y vuelve a iniciarse durante la instalacion, detener esa tarea antes de actualizar.

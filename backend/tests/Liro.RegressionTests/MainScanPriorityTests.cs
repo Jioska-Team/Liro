@@ -111,7 +111,7 @@ internal static class MainScanPriorityTests
     private static IDisposable Principal() => RobloxRequestPriority.MainScan();
     private static Task WaitForProvider(DateTimeOffset deadline, CancellationToken token)
     {
-        var type = typeof(Liro.Workers.Catalog.CatalogLimitedMonitor).Assembly.GetType("Liro.Workers.Catalog.CatalogWorkerDelay")!;
+        var type = typeof(Liro.CatalogWorker.Catalog.CatalogLimitedMonitor).Assembly.GetType("Liro.CatalogWorker.Catalog.CatalogWorkerDelay")!;
         return (Task)type.GetMethod("WaitForRateLimitAsync")!.Invoke(null,
             new object[] { new Liro.Application.RobloxIntegration.RobloxRateLimitedException(deadline), TimeSpan.FromMinutes(1), NullLogger.Instance, token })!;
     }

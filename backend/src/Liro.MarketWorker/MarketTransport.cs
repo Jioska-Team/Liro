@@ -54,6 +54,8 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         {
             using var response = await dispatch.RunAsync(TimeSpan.FromSeconds(60d / settings.Value.RequestsPerMinute), async () =>
             {
+                var proxyCooldown = await ProxyCooldownAsync(proxy);
+                if (proxyCooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProxyHTTP402", proxyCooldown, true);
                 var cooldown = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey);
                 if (cooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProveedor", cooldown.Value, true);
                 var wait = await route.TryAcquireAsync(id, ct);
@@ -63,7 +65,9 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                 if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait);
                 acquiredGlobal = true;
                 logger?.LogInformation("Solicitud de mercado: ruta {Route}; artículo {Item}; presupuesto {Budget} por minuto.", hash[..12], collectibleId, settings.Value.RequestsPerMinute);
-                return http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct);
+                return MarketProxyFailure.SendAsync(
+                    () => http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct),
+                    delay => PauseProxyAccountAsync(proxy, delay));
             }, ct);
             if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
             {
@@ -94,6 +98,22 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         }
     }
 
+    private static string ProxyCooldownKey(MarketProxy proxy)
+        => "liro:{market}:proxy-account:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(proxy.SecretReference))) + ":cooldown";
+
+    public async Task<TimeSpan> ProxyCooldownAsync(MarketProxy proxy)
+        => await redis.GetDatabase().KeyTimeToLiveAsync(ProxyCooldownKey(proxy)) ?? TimeSpan.Zero;
+
+    private async Task PauseProxyAccountAsync(MarketProxy proxy, TimeSpan delay)
+    {
+        // Share account failures across its routes and restarts; do not reset rate-limit counters.
+        await redis.GetDatabase().ScriptEvaluateAsync("""
+            local ttl = redis.call('PTTL', KEYS[1])
+            local requested = tonumber(ARGV[1])
+            if ttl < requested then redis.call('PSETEX', KEYS[1], requested, '1') end
+            return 1
+            """, [ProxyCooldownKey(proxy)], [(long)Math.Ceiling(delay.TotalMilliseconds)]);
+    }
     public static TimeSpan RetryDelay(HttpResponseMessage response, DateTimeOffset now)
     {
         var retry = response.Headers.RetryAfter;
@@ -111,3 +131,4 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
             })));
     }
 }
+

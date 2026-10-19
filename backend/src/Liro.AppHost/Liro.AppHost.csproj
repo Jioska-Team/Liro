@@ -1,7 +1,7 @@
 <Project Sdk="Aspire.AppHost.Sdk/13.6.1">
   <ItemGroup>
     <ProjectReference Include="..\Liro.Api\Liro.Api.csproj" />
-    <ProjectReference Include="..\Liro.Workers\Liro.Workers.csproj" />
+    <ProjectReference Include="..\Liro.CatalogWorker\Liro.CatalogWorker.csproj" />
     <ProjectReference Include="..\Liro.MarketWorker\Liro.MarketWorker.csproj" />
   </ItemGroup>
   <ItemGroup>

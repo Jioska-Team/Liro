@@ -34,7 +34,7 @@ if (builder.Configuration.GetValue<bool>("Lan:Enabled"))
         api.WithEnvironment($"Lan__AllowedOrigins__{origin.Key}", origin.Value ?? "");
     }
 }
-builder.AddProject<Projects.Liro_Workers>("workers").WithReference(database).WithReference(valkey).WaitFor(database).WaitFor(valkey);
+builder.AddProject<Projects.Liro_CatalogWorker>("workers").WithReference(database).WithReference(valkey).WaitFor(database).WaitFor(valkey);
 if (builder.Configuration.GetValue<bool>("MarketWorker:Launch"))
 {
     builder.AddProject<Projects.Liro_MarketWorker>("market-worker")

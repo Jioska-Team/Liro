@@ -147,7 +147,7 @@ internal static class RobloxTests
                 new PendingThumbnail(),
                 NullLogger<ImportRobloxItemService>.Instance,
                 failures, new CatalogRefreshPolicy());
-            var processor = new Liro.Workers.Catalog.CatalogImportProcessor(importer, repo, failures, NullLogger<Liro.Workers.Catalog.CatalogImportProcessor>.Instance);
+            var processor = new Liro.CatalogWorker.Catalog.CatalogImportProcessor(importer, repo, failures, NullLogger<Liro.CatalogWorker.Catalog.CatalogImportProcessor>.Instance);
             var exception = await Check.ThrowsAsync<HttpRequestException>(() => processor.ProcessAsync(1, false, CancellationToken.None));
             Check.That(exception.StatusCode == HttpStatusCode.TooManyRequests, "The 429 status was not propagated");
             Check.That(

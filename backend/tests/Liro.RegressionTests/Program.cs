@@ -5,6 +5,7 @@ CsrfDiagnosticsTests.Register(suite);
 if (args.Contains("--csrf-diagnostics-only")) return await suite.RunAsync();
 MarketLifecycleTests.Register(suite);
 if (args.Contains("--market-lifecycle-only")) return await suite.RunAsync();
+MarketProxyFailureTests.Register(suite);
 MarketTrackingTests.Register(suite);
 MarketConcurrencyTests.Register(suite);
 PersistenceOptimizationTests.Register(suite);
@@ -32,6 +33,7 @@ ApiTests.Register(suite);
 LanAccessTests.Register(suite);
 LanReadinessTests.Register(suite);
 return await suite.RunAsync();
+
 
 
 

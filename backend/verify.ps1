@@ -1,18 +1,2 @@
-$ErrorActionPreference = 'Stop'
-Push-Location $PSScriptRoot
-try {
-    dotnet format whitespace $PSScriptRoot --folder --verify-no-changes --exclude (Join-Path $PSScriptRoot 'src/Liro.Infrastructure/Persistence/Migrations') --verbosity quiet
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    dotnet build Liro.slnx --nologo -m:1 -p:UseSharedCompilation=false
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    dotnet run --project tests/Liro.RegressionTests --no-build --no-restore
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    dotnet run --project tests/Liro.AppHost.RegressionTests --no-build --no-restore
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    dotnet run --project tests/Liro.DevelopmentAgent.RegressionTests --no-build --no-restore
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-    & (Join-Path $PSScriptRoot 'tests/Liro.DevelopmentAgent.RegressionTests/Scripts.Tests.ps1')
-}
-finally {
-    Pop-Location
-}
+# Compatibility entry point. Implementation lives under scripts/.
+& (Join-Path $PSScriptRoot 'scripts/verification/Verify.ps1') @PSBoundParameters @args

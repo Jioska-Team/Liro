@@ -106,6 +106,12 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         MarketClaim? claim = null;
         try
         {
+            var proxyCooldown = await transport.ProxyCooldownAsync(proxy);
+            if (proxyCooldown > TimeSpan.Zero)
+            {
+                await DelayAsync(proxyCooldown < TimeSpan.FromSeconds(30) ? proxyCooldown : TimeSpan.FromSeconds(30), ct);
+                return;
+            }
             await writes.WaitAsync(ct);
             try { claim = await store.ClaimAsync(ct, selection % 4 == 3, schedule); if (claim is not null) selection = (selection + 1) % 4; }
             finally { writes.Release(); }
@@ -139,10 +145,11 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
             }
             await DelayAsync(ex.Delay < TimeSpan.FromSeconds(30) ? ex.Delay : TimeSpan.FromSeconds(30), ct);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             if (claim is not null) await ReleaseAsync(store, claim, "ErrorConsultaOGuardado", TimeSpan.FromMinutes(1), true, writes, ct);
-            logger.LogWarning("Falló la consulta o guardado de mercado; datos anteriores conservados.");
+            logger.LogWarning("Falló la consulta o guardado de mercado; tipo {Type}; HTTP {HttpStatus}; SQL {SqlState}; datos anteriores conservados.",
+                ex.GetType().Name, (ex as HttpRequestException)?.StatusCode, (ex as Npgsql.PostgresException)?.SqlState);
             await DelayAsync(TimeSpan.FromSeconds(3), ct);
         }
         finally
@@ -166,4 +173,5 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
     { try { await Task.Delay(delay, ct); } catch (OperationCanceledException) when (ct.IsCancellationRequested) { } }
 }
+
 

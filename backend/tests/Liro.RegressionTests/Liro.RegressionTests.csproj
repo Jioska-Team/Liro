@@ -8,7 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Liro.Infrastructure/Liro.Infrastructure.csproj" />
-    <ProjectReference Include="../../src/Liro.Workers/Liro.Workers.csproj" />
+    <ProjectReference Include="../../src/Liro.CatalogWorker/Liro.CatalogWorker.csproj" />
     <ProjectReference Include="../../src/Liro.MarketWorker/Liro.MarketWorker.csproj" />
     <ProjectReference Include="../../src/Liro.Api/Liro.Api.csproj" />
   </ItemGroup>

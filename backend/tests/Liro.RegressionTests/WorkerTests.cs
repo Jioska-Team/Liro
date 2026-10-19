@@ -3,7 +3,7 @@ using Liro.Application.Catalog.Services;
 using Liro.Application.RobloxIntegration;
 using Liro.Application.RobloxIntegration.Models;
 using Liro.Infrastructure.Roblox;
-using Liro.Workers.Catalog;
+using Liro.CatalogWorker.Catalog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

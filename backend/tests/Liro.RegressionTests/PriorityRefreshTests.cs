@@ -8,7 +8,7 @@ using Liro.Domain.Catalog.Enums;
 using Liro.Infrastructure.Roblox;
 using Liro.Infrastructure.Persistence;
 using Liro.Infrastructure.Persistence.Repositories;
-using Liro.Workers.Catalog;
+using Liro.CatalogWorker.Catalog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;

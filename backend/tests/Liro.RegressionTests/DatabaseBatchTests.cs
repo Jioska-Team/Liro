@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
-using Liro.Workers.Catalog;
+using Liro.CatalogWorker.Catalog;
 
 namespace Liro.RegressionTests;
 

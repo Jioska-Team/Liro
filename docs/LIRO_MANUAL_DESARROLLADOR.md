@@ -76,7 +76,7 @@ Liro/
 └── README.md
 ```
 
-La estructura definitiva se generará cuando creemos el proyecto base.
+La estructura anterior registra el diseño inicial. La solución actual usa `backend/Liro.slnx`; el host del catálogo se renombró a `Liro.CatalogWorker` y mercado tiene su propio `Liro.MarketWorker`. Ver [organización actual y compatibilidad](../backend/docs/SOLUTION-STRUCTURE.md).
 
 ---
 

@@ -1,5 +1,9 @@
 # Desarrollo y operación del backend Liro
 
+## Organización de la solución
+
+El host del catálogo se llama `Liro.CatalogWorker` (antes `Liro.Workers`). La solución agrupa Backend, Workers, Discord y Hosting. Ver [estructura, arquitectura y compatibilidad](docs/SOLUTION-STRUCTURE.md).
+
 ## Documentacion para frontend
 
 Guia de endpoints, respuestas, modelos TypeScript y coleccion de Postman:
@@ -283,3 +287,5 @@ Una fecha ausente, igual o anterior no borra ni hace retroceder las fechas guard
 En objetos antiguos, la actualización inicialmente nula se completa desde la creación
 conservada durante su siguiente importación exitosa. No representa un campo de
 modificación independiente publicado por Roblox ni la hora de consulta de Liro.
+
+El bot independiente de alertas para pruebas y producción está en `src/Liro.Discord.Alerts`. Consulta [configuración y despliegue](docs/discord-alerts.md).

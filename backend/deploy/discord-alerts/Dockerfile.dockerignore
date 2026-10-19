@@ -1,0 +1,15 @@
+**
+!global.json
+!src
+!src/Liro.Discord.Alerts/**
+!src/Liro.Application/**
+!src/Liro.Domain/**
+!src/Liro.Infrastructure/**
+**/bin
+**/obj
+**/appsettings.*.json
+**/*.dpapi
+**/.env*
+**/secrets.json
+**/*.pfx
+**/*.pem

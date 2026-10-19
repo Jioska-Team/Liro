@@ -10,13 +10,13 @@ El modo LAN esta desactivado por defecto y solo admite Development.
 3. Desde PowerShell **como administrador**, en la carpeta backend, ejecutar una vez:
 
    ```powershell
-   .\Start-Lan.ps1 -ConfigureFirewall
+   .\scripts\development\Start-Lan.ps1 -ConfigureFirewall
    ```
 
 4. Desde PowerShell **normal**, en la misma carpeta:
 
    ```powershell
-   .\Start-Lan.ps1
+   .\scripts\development\Start-Lan.ps1
    ```
 
 El script obtiene la IPv4 y mascara de la interfaz privada con puerta de enlace.
@@ -61,7 +61,7 @@ Para desactivar: CTRL+C y arrancar Liro normalmente, sin este script.
 Para quitar la regla (PowerShell como administrador):
 
 ```powershell
-.\Start-Lan.ps1 -RemoveFirewall
+.\scripts\development\Start-Lan.ps1 -RemoveFirewall
 ```
 
 No abrir puertos en el router. No compartir el enlace con token del Dashboard.

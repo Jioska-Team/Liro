@@ -6,7 +6,7 @@ using Liro.Domain.Catalog.Entities;
 using Liro.Domain.Catalog.Enums;
 using Liro.Domain.Catalog.Models;
 using Liro.Infrastructure.Roblox;
-using Liro.Workers.Catalog;
+using Liro.CatalogWorker.Catalog;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

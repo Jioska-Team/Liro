@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Liro.Application.RobloxIntegration.Models;
 using Liro.Infrastructure.Roblox;
-using Liro.Workers.Catalog;
+using Liro.CatalogWorker.Catalog;
 namespace Liro.RegressionTests;
 
 internal static class CoverageTests

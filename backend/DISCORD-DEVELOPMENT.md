@@ -26,10 +26,10 @@ Requiere PC encendida, sesion iniciada e Internet. No despierta un PC suspendido
 Desde PowerShell normal en la carpeta backend:
 
 ```powershell
-.\Setup-DevelopmentAgent.ps1 -Action Install
-.\Setup-DevelopmentAgent.ps1 -Action Configure
-.\Setup-DevelopmentAgent.ps1 -Action InstallPanel
-.\Setup-DevelopmentAgent.ps1 -Action Run
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Install
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Configure
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action InstallPanel
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Run
 ```
 
 Configure solicita la ruta absoluta de backend, IDs, interfaz opcional y token
@@ -45,7 +45,7 @@ modos toman un bloqueo exclusivo para no escribir configuracion concurrentemente
 Opcional, para arrancar el agente al iniciar sesion:
 
 ```powershell
-.\Setup-DevelopmentAgent.ps1 -Action RegisterStartup
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action RegisterStartup
 ```
 
 No activa Docker ni Liro al iniciar sesion; eso ocurre al pulsar el boton cuando
@@ -102,7 +102,7 @@ desconocido bloquea nuevos arranques; no se asume que esta apagado.
 ## Retirar o actualizar
 
 ```powershell
-.\Setup-DevelopmentAgent.ps1 -Action Uninstall
+.\scripts\discord\Setup-DiscordLocalControl.ps1 -Action Uninstall
 ```
 
 Retira la tarea de inicio y detiene solo el ejecutable del agente instalado en su
