@@ -1,5 +1,8 @@
 # Estructura de la solución y arquitectura
 
+> Actualización 2026-10-19: el bot instalado ya usa `scripts/development`. Se retiraron los siete enlaces `.ps1` de la raíz después de verificar su conexión. Usar exclusivamente las rutas bajo `scripts/`. Las menciones anteriores a enlaces compatibles describen el estado previo.
+
+
 ## Contrato original
 
 La fuente oficial es [LIRO_ARQUITECTURA_Y_PATRONES.md](../../docs/LIRO_ARQUITECTURA_Y_PATRONES.md), especialmente las secciones 3, 6, 17 y 56. Se definió un monolito modular con Clean Architecture y comunicación orientada a eventos, DDD ligero y CQRS ligero. Esto no prescribe microservicios por módulo.
@@ -25,6 +28,7 @@ src
 │   └── Liro.Discord.Alerts
 └── Hosting
     ├── Liro.AppHost
+    ├── Liro.SandboxMigrator
     └── Liro.ServiceDefaults
 tests
 ├── Liro.RegressionTests
@@ -37,6 +41,7 @@ Backend/Workers/Discord/Hosting son carpetas de solución en Liro.slnx. Las ruta
 
 | Proyecto | Responsabilidad |
 |---|---|
+| Liro.SandboxMigrator | Herramienta de despliegue en `tools/`: aplica migraciones únicamente a la base aislada del sandbox. No se ejecuta desde AppHost. |
 | Liro.Domain | Entidades, reglas y eventos del negocio; independiente de infraestructura. |
 | Liro.Application | Casos de uso y contratos; depende de Domain. |
 | Liro.Infrastructure | EF/PostgreSQL, Valkey, clientes y adaptadores; implementa contratos internos. |

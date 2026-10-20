@@ -1,5 +1,7 @@
 # Evaluación previa al sandbox
 
+> Preparación posterior completada: manifiestos, migrador, perfiles de workers y health checks opt-in están disponibles en [deploy/sandbox](../deploy/sandbox/README.md). No se ha desplegado ni validado un arranque real en Docker. La tabla siguiente conserva los hallazgos que motivaron esa preparación; no sustituye la guía vigente.
+
 Revisión de código y estructura de despliegue, 2026-10-19. No se ha instalado, reiniciado ni conectado un entorno nuevo. No equivale a una prueba de carga ni a una auditoría de seguridad completa.
 
 ## Dictamen

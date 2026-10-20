@@ -134,7 +134,7 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
             WorkingDirectory = options.BackendPath, UseShellExecute = false, CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
-        foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-File", Path.Combine(options.BackendPath, "Start-Lan.ps1"), "-AgentMode", "-InterfaceIndex", endpoint.InterfaceIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) })
+        foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-File", Path.Combine(options.BackendPath, "scripts", "development", "Start-Lan.ps1"), "-AgentMode", "-InterfaceIndex", endpoint.InterfaceIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) })
         {
             info.ArgumentList.Add(argument);
         }

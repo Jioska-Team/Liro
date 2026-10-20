@@ -24,6 +24,8 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         var schemaReady = false;
         var cursor = 0;
         var schedule = settings.Value;
+        bool? previousDirect = null;
+        var directSchedule = settings.Value;
         logger.LogInformation("Mercado paralelo: máximo {Concurrency} consultas; presupuesto {Budget} por minuto; un guardado simultáneo.", settings.Value.MaxConcurrentRequests, settings.Value.RequestsPerMinute);
         try
         {
@@ -79,6 +81,21 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                         finally { writes.Release(); }
                         nextSeed = DateTime.UtcNow.AddMinutes(5);
                     }
+                    var proxies = connections.Select(x => x.Proxy).ToArray();
+                    var useDirect = await transport.ShouldUseDirectAsync(proxies);
+                    if (previousDirect != useDirect)
+                    {
+                        logger.LogInformation("Ruta de mercado: {Mode}; respaldo máximo {Budget}/min, subordinado al cupo del catálogo.",
+                            useDirect ? "DIRECTA_RESPALDO" : "PROXIES", settings.Value.DirectRequestsPerMinute);
+                        if (useDirect) directSchedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct), settings.Value.DirectRequestsPerMinute);
+                        previousDirect = useDirect;
+                    }
+                    if (useDirect)
+                    {
+                        pool.TryStart("DIRECTA_RESPALDO", () => ProcessAsync("DIRECTA_RESPALDO", null, writes, directSchedule, ct, proxies));
+                        await Task.Delay(TimeSpan.FromSeconds(1), ct);
+                        continue;
+                    }
                     // Rotate the first offered lane so a larger pool cannot starve its last routes.
                     for (var i = 0; i < connections.Count; i++)
                     {
@@ -99,14 +116,15 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         finally { await pool.DrainAsync(); }
     }
 
-    private async Task ProcessAsync(string key, MarketProxy proxy, SemaphoreSlim writes, MarketOptions schedule, CancellationToken ct)
+    private async Task ProcessAsync(string key, MarketProxy? proxy, SemaphoreSlim writes, MarketOptions schedule, CancellationToken ct,
+        IReadOnlyList<MarketProxy>? proxies = null)
     {
         using var scope = scopes.CreateScope();
         var store = new MarketStore(scope.ServiceProvider.GetRequiredService<LiroDbContext>());
         MarketClaim? claim = null;
         try
         {
-            var proxyCooldown = await transport.ProxyCooldownAsync(proxy);
+            var proxyCooldown = proxy is null ? TimeSpan.Zero : await transport.ProxyCooldownAsync(proxy);
             if (proxyCooldown > TimeSpan.Zero)
             {
                 await DelayAsync(proxyCooldown < TimeSpan.FromSeconds(30) ? proxyCooldown : TimeSpan.FromSeconds(30), ct);
@@ -120,7 +138,13 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
             var retryUntil = DateTime.UtcNow.AddMinutes(2);
             while (true)
             {
-                try { result = await transport.ReadAsync(proxy, claim.CollectibleItemId, ct); break; }
+                try
+                {
+                    result = proxy is null
+                        ? await transport.ReadDirectAsync(claim.CollectibleItemId, proxies ?? [], ct)
+                        : await transport.ReadAsync(proxy, claim.CollectibleItemId, ct);
+                    break;
+                }
                 catch (MarketHttpException ex) when (ex.Code.StartsWith("Cupo", StringComparison.Ordinal)
                     && DateTime.UtcNow + ex.Delay < retryUntil)
                 {

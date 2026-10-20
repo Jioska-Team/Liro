@@ -6,6 +6,8 @@ namespace Liro.MarketWorker;
 public sealed class MarketOptions
 {
     public bool Enabled { get; set; }
+    public bool DirectFallbackEnabled { get; set; } = true;
+    public int DirectRequestsPerMinute { get; set; } = 2;
     public int RequestsPerMinute { get; set; } = 18;
     public int MaxConcurrentRequests { get; set; } = 5;
     public int VeryActiveMinutes { get; set; } = 2;
@@ -20,7 +22,8 @@ public sealed class MarketOptions
         "InciertaReciente" => UncertainMinutes, "SinHistorial" or "SinDatos" => MissingHistoryMinutes,
         "Inactiva" or "SinVentasRecientes" => InactiveMinutes, _ => LowMinutes
     });
-    public bool IsValid() => RequestsPerMinute is >= 1 and <= 60 && MaxConcurrentRequests is >= 1 and <= 10 && VeryActiveMinutes >= 2
+    public bool IsValid() => DirectRequestsPerMinute is >= 1 and <= 2
+        && RequestsPerMinute is >= 1 and <= 60 && MaxConcurrentRequests is >= 1 and <= 10 && VeryActiveMinutes >= 2
         && ActiveMinutes >= VeryActiveMinutes && NormalMinutes >= ActiveMinutes
         && LowMinutes >= NormalMinutes && InactiveMinutes >= LowMinutes && InactiveMinutes <= 1440 && UncertainMinutes >= 1 && MissingHistoryMinutes >= 1;
     public (string Activity, TimeSpan Interval) Schedule(decimal? dailySales) => dailySales switch

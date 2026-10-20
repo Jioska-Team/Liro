@@ -41,7 +41,7 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
 
     public async Task<ResaleObservation> ReadAsync(MarketProxy proxy, Guid collectibleId, CancellationToken ct)
     {
-        // Validate credentials before reserving capacity; never fall back to direct networking.
+        // This method never changes route. The worker selects fallback only after all proxies are unavailable.
         using var http = CreateProxyClient(proxy, configuration);
         var normalized = MarketProxy.RouteKey(proxy.Address);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
@@ -65,9 +65,7 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                 if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait);
                 acquiredGlobal = true;
                 logger?.LogInformation("Solicitud de mercado: ruta {Route}; artículo {Item}; presupuesto {Budget} por minuto.", hash[..12], collectibleId, settings.Value.RequestsPerMinute);
-                return MarketProxyFailure.SendAsync(
-                    () => http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct),
-                    delay => PauseProxyAccountAsync(proxy, delay));
+                return SendProxyAsync(http, proxy, collectibleId, ct);
             }, ct);
             if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
             {
@@ -95,6 +93,89 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
             {
                 if (acquiredRoute) await route.CompleteAsync(id, CancellationToken.None);
             }
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendProxyAsync(HttpClient http, MarketProxy proxy, Guid collectibleId, CancellationToken ct)
+    {
+        try
+        {
+            return await MarketProxyFailure.SendAsync(
+                () => http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct),
+                delay => PauseProxyAccountAsync(proxy, delay));
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is null && ex.HttpRequestError is
+            HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError or HttpRequestError.ProxyTunnelError)
+        {
+            await PauseProxyAccountAsync(proxy, TimeSpan.FromMinutes(2));
+            throw new MarketHttpException("ProxySinConexion", TimeSpan.FromMinutes(2), true);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            await PauseProxyAccountAsync(proxy, TimeSpan.FromMinutes(2));
+            throw new MarketHttpException("ProxyTimeout", TimeSpan.FromMinutes(2), true);
+        }
+    }
+
+    public async Task<bool> ShouldUseDirectAsync(IReadOnlyList<MarketProxy> proxies)
+    {
+        if (!settings.Value.DirectFallbackEnabled) return false;
+        var unavailable = 0;
+        foreach (var proxy in proxies)
+        {
+            var secrets = configuration.GetSection("MarketProxySecrets:" + proxy.SecretReference);
+            if (string.IsNullOrWhiteSpace(secrets["Username"]) || string.IsNullOrWhiteSpace(secrets["Password"])
+                || await ProxyCooldownAsync(proxy) > TimeSpan.Zero) unavailable++;
+        }
+        var paused = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey) > TimeSpan.Zero;
+        return MarketFallbackPolicy.UseDirect(settings.Value.DirectFallbackEnabled, proxies.Count, unavailable, paused);
+    }
+
+    public async Task<ResaleObservation> ReadDirectAsync(Guid collectibleId, IReadOnlyList<MarketProxy> proxies, CancellationToken ct)
+    {
+        if (!await ShouldUseDirectAsync(proxies))
+            throw new MarketHttpException("ProxyDisponibleOPausaProveedor", TimeSpan.FromSeconds(3), true);
+        var requestSettings = new RobloxRequestOptions();
+        configuration.GetSection("Roblox:Requests").Bind(requestSettings);
+        // Fail closed on an unsupported budget configuration instead of silently creating another pool.
+        if (requestSettings.BudgetCapacity is < 7 or > 18 || requestSettings.BudgetWindow != TimeSpan.FromMinutes(1))
+            throw new MarketHttpException("PresupuestoDirectoInvalido", TimeSpan.FromMinutes(1), true);
+        var direct = new MarketDirectBudget(redis, requestSettings, settings.Value.DirectRequestsPerMinute);
+        var global = Budget("liro:{market}:global", settings.Value.RequestsPerMinute, TimeSpan.Zero);
+        var id = Guid.NewGuid().ToString("N");
+        var acquired = false;
+        var marketAcquired = false;
+        try
+        {
+            var wait = await direct.TryAcquireAsync(id, ct);
+            if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoDirectoPrioridadCatalogo", wait, true);
+            acquired = true;
+            wait = await global.TryAcquireAsync(id, ct);
+            if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait, true);
+            marketAcquired = true;
+            // Never let proxy settings or environment variables redirect the direct fallback.
+            using var http = new HttpClient(new HttpClientHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false })
+                { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 8 * 1024 * 1024 };
+            ct.ThrowIfCancellationRequested();
+            logger?.LogInformation("Solicitud de mercado: ruta DIRECTA_RESPALDO; artículo {Item}; presupuesto {Budget} por minuto.", collectibleId, settings.Value.DirectRequestsPerMinute);
+            using var response = await http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct);
+            if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
+            {
+                var delay = RetryDelay(response, DateTimeOffset.UtcNow);
+                await redis.GetDatabase().ScriptEvaluateAsync("""
+                    local requested = tonumber(ARGV[1])
+                    if redis.call('PTTL', KEYS[1]) < requested then redis.call('PSETEX', KEYS[1], requested, '1') end
+                    return 1
+                    """, [CooldownKey], [(long)Math.Ceiling(delay.TotalMilliseconds)]);
+                throw new MarketHttpException("HTTP" + (int)response.StatusCode, delay, true);
+            }
+            if (!response.IsSuccessStatusCode) throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
+            return ResaleObservation.Parse(await response.Content.ReadAsStringAsync(ct), DateTime.UtcNow);
+        }
+        finally
+        {
+            try { if (marketAcquired) await global.CompleteAsync(id, CancellationToken.None); }
+            finally { if (acquired) await direct.CompleteAsync(id, CancellationToken.None); }
         }
     }
 

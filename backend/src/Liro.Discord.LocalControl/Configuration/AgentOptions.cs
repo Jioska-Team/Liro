@@ -34,7 +34,8 @@ public sealed class AgentOptions
         if (ApplicationId == 0 || GuildId == 0 || ChannelId == 0 || RoleId == 0
             || !Path.IsPathFullyQualified(BackendPath) || InterfaceIndex is <= 0
             || !File.Exists(Path.Combine(BackendPath, "src", "Liro.AppHost", "Liro.AppHost.csproj"))
-            || !File.Exists(Path.Combine(BackendPath, "Start-Lan.ps1")))
+            || !File.Exists(Path.Combine(BackendPath, "scripts", "development", "Start-Lan.ps1"))
+            || !File.Exists(Path.Combine(BackendPath, "scripts", "development", "Get-LanConfiguration.ps1")))
         {
             throw new InvalidOperationException("Configura IDs validos y la ruta absoluta del backend local.");
         }

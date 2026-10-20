@@ -25,6 +25,7 @@ public static class MarketSchedulePlan
         var scale = Math.Max(1, backgroundDemand / (usable * 0.25));
         return new MarketOptions {
             Enabled = baseline.Enabled, RequestsPerMinute = baseline.RequestsPerMinute,
+            DirectFallbackEnabled = baseline.DirectFallbackEnabled, DirectRequestsPerMinute = baseline.DirectRequestsPerMinute,
             MaxConcurrentRequests = baseline.MaxConcurrentRequests,
             VeryActiveMinutes = very, ActiveMinutes = Math.Max(very, high),
             NormalMinutes = Math.Max(high, (int)Math.Ceiling(baseline.NormalMinutes * scale)),

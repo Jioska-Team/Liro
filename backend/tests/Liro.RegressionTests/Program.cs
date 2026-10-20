@@ -1,6 +1,10 @@
 using Liro.RegressionTests;
 
 var suite = new RegressionSuite();
+MarketDirectFallbackTests.Register(suite);
+if (args.Contains("--market-direct-only")) return await suite.RunAsync();
+SandboxHealthTests.Register(suite);
+if (args.Contains("--sandbox-health-only")) return await suite.RunAsync();
 CsrfDiagnosticsTests.Register(suite);
 if (args.Contains("--csrf-diagnostics-only")) return await suite.RunAsync();
 MarketLifecycleTests.Register(suite);

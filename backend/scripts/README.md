@@ -1,9 +1,14 @@
 # Scripts operativos
 
+> Actualización 2026-10-19: el bot instalado ya usa `scripts/development`. Se retiraron los siete enlaces `.ps1` de la raíz después de verificar su conexión. Usar exclusivamente las rutas bajo `scripts/`. Las menciones anteriores a enlaces compatibles describen el estado previo.
+
+
 Las implementaciones están organizadas por responsabilidad:
 
 ```text
 scripts/
+  sandbox/
+    Manage-Sandbox.ps1         # validar/compilar/iniciar/consultar/detener solo liro-sandbox
   discord/
     Setup-DiscordLocalControl.ps1
     Get-AgentProcessImage.ps1

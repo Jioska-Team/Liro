@@ -289,3 +289,5 @@ conservada durante su siguiente importación exitosa. No representa un campo de
 modificación independiente publicado por Roblox ni la hora de consulta de Liro.
 
 El bot independiente de alertas para pruebas y producción está en `src/Liro.Discord.Alerts`. Consulta [configuración y despliegue](docs/discord-alerts.md).
+
+El backend sandbox aislado se prepara desde [deploy/sandbox](deploy/sandbox/README.md), con PostgreSQL y Valkey propios. Su script está en `scripts/sandbox/Manage-Sandbox.ps1`. No arranca desde el bot local ni comparte sus volúmenes.
