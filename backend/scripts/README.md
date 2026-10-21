@@ -7,8 +7,6 @@ Las implementaciones están organizadas por responsabilidad:
 
 ```text
 scripts/
-  sandbox/
-    Manage-Sandbox.ps1         # validar/compilar/iniciar/consultar/detener solo liro-sandbox
   discord/
     Setup-DiscordLocalControl.ps1
     Get-AgentProcessImage.ps1
@@ -18,9 +16,13 @@ scripts/
     Get-LanConfiguration.ps1
   verification/
     Verify.ps1
+  maintenance/
+    Backup-Database.ps1        # copia completa, manifiesto SHA-256, 14 copias
+    Restore-DatabaseBackup.ps1 # solo una base nueva liro_restore_...
+    Setup-DatabaseBackups.ps1  # tarea diaria 03:00, una ejecucion a la vez
 ```
 
-Las rutas originales de la raíz siguen siendo enlaces compatibles que reenvían parámetros. `Setup-DevelopmentAgent.ps1` también redirige al instalador actual. No contienen otra implementación. Los binarios del bot local siguen utilizando esas entradas estables; no requieren reinstalación por esta reorganización.
+Las rutas antiguas de la raiz fueron retiradas. Usar las entradas organizadas bajo `scripts/`.
 
 Los scripts resuelven la raíz backend a partir de su ubicación. El script de instalación conserva ejecutable, tarea de Windows, directorio de configuración y credenciales. No ejecutar Install para aplicar una mera reorganización del código.
 

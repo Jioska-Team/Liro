@@ -1,14 +1,15 @@
 # Seguimiento de mercado
 
-## Estado inicial
+## Estado actual
 
 `Liro.MarketWorker` es un proceso separado administrado por Aspire. AppHost lo inicia por
 defecto (`MarketWorker:Launch=true`, `MarketWorker:Enabled=true`) junto con el backend,
 después de PostgreSQL y Valkey. El comando de parada de Aspire utilizado por Discord
 también lo detiene. El ejecutable aislado conserva `Market:Enabled=false` por defecto.
 No cambia los servicios ni los presupuestos de la principal, conocidos o complementarias.
-Sin conexión de mercado válida no programa artículos ni envía solicitudes. No existe salida
-directa de respaldo ni rotación automática para eludir un 429. No se incluyen proxies reales.
+Sin proxy válido puede usar el [respaldo directo](../MARKET-DIRECT-FALLBACK.md), habilitado
+por defecto: una solicitud por minuto dentro de las 18 globales compartidas con catálogo.
+No se rota para eludir un 429. No se incluyen proxies reales.
 
 ## Tablas
 
@@ -30,7 +31,7 @@ Los precios del catálogo y su historial YA se conservan en `ItemMarketState` y
 
 1. Aplicar la migración `AddMarketTrackingAndGeneralCatalog` mediante el flujo habitual del
    backend (Development la aplica al iniciar API/Workers). El trabajador de mercado no aplica
-   migraciones ni ejecuta la limpieza de artículos del arranque del catálogo.
+   migraciones. El arranque de API/catálogo tampoco elimina artículos por creador.
 2. Ejecutar `scripts/Configurar-Mercado.sql`: crea una plantilla INACTIVA, idempotente.
 3. Configurar una dirección de proxy real y la referencia a sus credenciales. Solo se aceptan
    proxies HTTP/HTTPS con host y puerto, sin usuario/contraseña en la URL, rutas ni parámetros.
@@ -67,25 +68,27 @@ Cada cinco minutos se incorporan limitados oficiales (User/1, Limited o LimitedU
 CollectibleItemId. Los que no tienen ese identificador quedan fuera hasta que el catálogo lo
 obtenga. No se envían IDs de instancia como IDs de artículo coleccionable.
 
-Se reserva el pendiente con fecha más antigua mediante `FOR UPDATE SKIP LOCKED`. La reserva
+La cola usa `FOR UPDATE SKIP LOCKED`, con prioridad MuyAlta antes de Alta en los turnos
+prioritarios y orden de vencimiento dentro de cada categoría; uno de cada cuatro turnos
+prefiere el resto. Ver [prioridades vigentes](../MARKET-DIRECT-FALLBACK.md#prioridad-de-los-artículos-más-activos). La reserva
 evita consultas duplicadas y se recupera tras cinco minutos si el proceso termina. Solo la
 reserva vigente puede guardar; la transacción escribe historial y estado juntos.
 
-El trabajador admite hasta cinco consultas en curso, como máximo una por dirección de proxy.
+La configuración versionada admite hasta ocho consultas en curso, como máximo una por
+dirección de proxy; el valor predeterminado de la clase de opciones es cinco.
 La cola de PostgreSQL reserva artículos distintos; cada consulta tiene su propio contexto de
 base de datos. Las reservas y los guardados del trabajador pasan por una única puerta de
 escritura. Las direcciones equivalentes se deduplican aunque tengan claves distintas.
 
-El presupuesto conjunto de MERCADO se despliega por etapas de 18, 24 y 30 solicitudes en
-60 segundos, con cinco proxies limitados inicialmente a 6 cada uno. Las salidas se escalonan
-cada 60/presupuesto segundos: 3,33; 2,5; y 2 segundos, respectivamente. Esta separación es
-entre inicios: no se espera la respuesta de un proxy para iniciar el siguiente. Cada proxy
-conserva al menos 3 segundos entre consultas. El presupuesto de catálogo no se modifica.
-Las reservas de Valkey incluyen peticiones en curso y la ventana después de su finalización.
-Usa exclusivamente claves `liro:{market}:...`; no consume ni reinicia `liro:{roblox}:...`.
-Los límites de todas las instancias deben configurarse iguales. No se presume que más IPs
-otorguen cuotas independientes en Roblox. No se promete cumplir intervalos de 2 minutos
-para todos con este presupuesto; consultar el atraso en Diagnostico-Mercado.sql.
+[appsettings.json](../src/Liro.MarketWorker/appsettings.json) configura 48 solicitudes por
+minuto y ocho consultas concurrentes; los valores predeterminados de la clase son 18 y cinco.
+La capacidad efectiva también depende de las conexiones activas y de sus límites. Las etapas
+18/24/30 con cinco proxies de 6/minuto pertenecen a validaciones anteriores, no al estado vivo.
+
+Las salidas proxy conservan presupuestos en Valkey bajo `liro:{market}:...`; el respaldo
+directo participa además en `liro:{roblox}:...`. Las reservas incluyen peticiones en curso
+y la ventana posterior a su finalización. Los límites deben coincidir entre instancias
+que comparten presupuesto. No se presume que más IPs otorguen cuotas independientes.
 
 Un 403 o 429 respeta Retry-After (segundos o fecha). Si falta, espera un minuto. Se aplica un
 enfriamiento compartido a TODO el mercado para no eludir la espera cambiando de proxy.
@@ -95,8 +98,9 @@ no se interpreta como RAP cero. No se siguen redirecciones; se conserva validaci
 
 Las consultas usan exclusivamente `/marketplace-sales/v1/item/{collectibleItemId}/resale-data`.
 Se conservan todos los puntos devueltos, no se promete recuperar periodos ausentes del proveedor.
-La actividad necesita siete días completos explícitos de volumen diario; no convierte días
-faltantes en ventas cero. Los umbrales iniciales son operativos, NO una puntuación de demanda:
+Una semana parcial puede demostrar un mínimo de actividad; el promedio exacto y la
+inactividad requieren siete días completos. Los días faltantes no se convierten en ventas cero.
+Ver [clasificación desde el historial](MERCADO-CLASIFICACION-HISTORIAL.md). Los umbrales iniciales son operativos, NO una puntuación de demanda:
 100+ ventas/día: 2 min; 10+: 3 min; 1+: 30 min; menos de 1: 120 min; cero: 180 min;
 datos insuficientes: 120 min. Frecuencias configurables en Market, no migradas al catálogo general.
 
@@ -108,11 +112,14 @@ El registro se desactiva para retirar una conexión en la siguiente recarga; una
 iniciada puede completar. El proceso comparte CPU, disco y base con el catálogo: la independencia
 de red no garantiza impacto cero al habilitarlo. Medir antes de ampliar capacidad.
 
-No incluye todavía API pública de RAP, gráficas, SignalR de mercado, cálculo de demanda/valoración,
-administrador web de CatalogoGeneral ni migración de otras constantes. La lectura de precios
-existente sigue funcionando. No activar contra Roblox sin configurar y probar primero las salidas.
+La API ya expone [series de RAP y ventas](market-history-api.md). No incluye SignalR de mercado,
+cálculo de demanda/valoración ni administrador web de CatalogoGeneral. La lectura de precios
+existente sigue funcionando. Configurar y validar las salidas antes de operar contra Roblox.
 
-## Recomendación de ampliación
+## Recomendación histórica de ampliación
+
+Las etapas siguientes conservan el razonamiento de la validación inicial; no sustituyen
+los valores versionados ni acreditan la capacidad del despliegue actual.
 
 Mantener cinco proxies y validar cada etapa antes de aumentar el presupuesto. Comparar
 solicitudes efectivas en ventanas móviles de 60 segundos, respuestas 403/429, duración de

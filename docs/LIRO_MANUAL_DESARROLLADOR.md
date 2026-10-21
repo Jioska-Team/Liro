@@ -1,5 +1,8 @@
 # LIRO — Manual para arrancar el proyecto como desarrollador
 
+> Estado documental (2026-10-21): se conserva el diseño y las instrucciones originales, no una certificación de funcionalidades o comandos vigentes. Consultar el [estado actual y las fuentes de verdad](../README.md), la [estructura de solución](../backend/docs/SOLUTION-STRUCTURE.md) y las instrucciones operativas de [backend](../backend/README.md) y [web](../web/liro-web/README.md). Liro.Workers es un nombre histórico; la solución actual es backend/Liro.slnx. SignalR, trading y valoración son objetivos; extension/ y roblox/ no tienen implementación. No ejecutar las instrucciones históricas de proyectos inexistentes.
+
+
 ## Objetivo
 
 Este documento explica qué necesita hacer un desarrollador que recibe el repositorio de **Liro** y quiere levantarlo localmente.

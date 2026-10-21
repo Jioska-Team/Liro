@@ -4,25 +4,34 @@
 
 El host del catálogo se llama `Liro.CatalogWorker` (antes `Liro.Workers`). La solución agrupa Backend, Workers, Discord y Hosting. Ver [estructura, arquitectura y compatibilidad](docs/SOLUTION-STRUCTURE.md).
 
+[Índice de documentación técnica](docs/INDEX.md).
+
 ## Documentacion para frontend
 
 Guia de endpoints, respuestas, modelos TypeScript y coleccion de Postman:
 [API para frontend](docs/frontend/README.md). No requiere Docker en el equipo del consumidor.
 
+[Convencion de rutas e importaciones compatibles](docs/api-route-conventions.md).
+
 ## Verificación
 
-Desde backend: `./verify.ps1`.
-Compila la solución y ejecuta `tests/Liro.RegressionTests`, un ejecutable de regresión sin paquetes adicionales de test.
-También puede ejecutarse con `dotnet run --project tests/Liro.RegressionTests`.
-No usar un resultado vacío de `dotnet test` como prueba: este proyecto usa un ejecutable, no un adaptador de test.
+La entrada vigente es [scripts/verification/Verify.ps1](scripts/verification/Verify.ps1).
+Comprueba formato, compila en una copia temporal aislada y ejecuta las cuatro suites de
+regresión de la solución, además de comprobaciones PowerShell. Son ejecutables propios;
+un resultado vacío de `dotnet test` no acredita su ejecución.
 
-Las pruebas cubren dominio, importación con HTTP simulado, reanudación del bootstrap, validación MVC,
-autenticación, serialización de eventos y coherencia entre modelo/migraciones.
-No sustituyen una prueba con PostgreSQL, Docker y Roblox reales.
+La verificación completa exige `LIRO_TEST_POSTGRES` (base separada `liro_test_`) y
+`LIRO_TEST_REDIS` (base lógica distinta de 0). No iniciarla sin esos recursos preparados.
+Consultar [scripts operativos](scripts/README.md). Para cambios exclusivamente documentales,
+validar enlaces, rutas y diferencias de archivos sin iniciar servicios.
 
 ## Arranque y migraciones
 
-Ejecutar Liro.AppHost con Docker disponible. API y Workers registran primero
+Se requiere .NET 10 SDK y Docker para la infraestructura local. Desde `backend/`,
+ejecutar `dotnet run --project src/Liro.AppHost` o seleccionar Liro.AppHost en Visual Studio.
+El recurso `workers` corresponde a Liro.CatalogWorker; `market-worker` depende de
+`MarketWorker:Launch`. Para acceso remoto de desarrollo ver [LAN](LAN-DEVELOPMENT.md)
+y [control Discord](DISCORD-DEVELOPMENT.md). API y Workers registran primero
 DatabaseInitializationService. En Development aplica las migraciones antes de iniciar los procesos
 que consumen tablas; EF/Npgsql coordina sus migraciones mediante su bloqueo de migración.
 En otros entornos exige que todas las migraciones estén aplicadas y falla explícitamente si faltan.
@@ -65,33 +74,25 @@ Los DTO no exponen eventos de dominio ni el token de concurrencia.
 El diagnóstico detallado /api/infrastructure solo existe funcionalmente en Development y devuelve
 503 cuando una dependencia no está disponible.
 
-## Catálogo y errores HTTP 500 de Roblox
+## Catálogo y solicitudes Roblox
 
-Los clientes HTTP conservan reintentos para fallos transitorios de red/5xx, con una política específica para Roblox. Cuando Roblox continúa
-devolviendo 500 tras esos reintentos, el bootstrap espera RetryDelay y retoma el cursor persistido.
-No se oculta el fallo externo ni se promete que sus servidores responderán correctamente.
-Un cursor rechazado con 400 reinicia el recorrido del alcance configurado.
-Las páginas incompletas o con cursor que no avanza se rechazan; no se interpretan como fin exitoso.
+El catálogo admite assets y bundles oficiales (User/1), detalles por lotes y búsquedas
+`/v2/search/items/details`. La configuración valida ese creador; `CreatorTargetId=null`
+no es una alternativa admitida. La configuración operativa desactiva bootstrap y
+recorrido histórico ordinario, y mantiene descubrimiento reciente y vigilancia de limiteds.
 
-El filtro por creador de Roblox (ID 1) se conserva por defecto. Se configura con:
-`Roblox:Catalog:CreatorTargetId`, `CreatorType`, `Category` y `PageSize`.
-En JSON, CreatorTargetId=null elimina el filtro de creador.
-Bootstrap y descubrimiento periódico utilizan el mismo alcance y endpoint v1 documentado.
-Cambiar el alcance produce un checkpoint separado.
-Una búsqueda paginada no garantiza por sí sola cobertura de items que Roblox no publica en ella.
+Las fuentes de operación son [descubrimiento](docs/CATALOG-DISCOVERY.md),
+[monitor de limiteds](docs/LIMITED-MONITOR.md), [prioridades](docs/CATALOG-REFRESH-PRIORITY.md)
+y [presupuesto y reutilización](docs/optimizacion-solicitudes-roblox.md).
+Estas guías distinguen valores configurados, elegibilidad y tiempos efectivos; un intervalo
+no garantiza una consulta puntual. Para 403 ver [diagnóstico](docs/DIAGNOSTICO-403-CATALOGO.md).
 
-CatalogWorkers configura BootstrapEnabled, RefreshEnabled, DiscoveryEnabled, RetryDelay,
-ItemDelay, PageDelay, CycleInterval, BatchSize y DiscoveryPages.
-Por defecto los tres trabajos están habilitados, con 2 segundos entre items y ciclos de 5 minutos.
-LastCheckedAt registra consultas exitosas; LastUpdatedAt registra cambios de catálogo.
-Las imágenes pendientes o los fallos de miniaturas conservan la URL anterior.
-Los datos de un item se vuelven a comprobar cuando transcurren 30 minutos (intervalo configurable).
-
-CatalogCheckpoints conserva el cursor de cada alcance. Un bootstrap completado no se repite en cada
-reinicio; descubrimiento y refresh mantienen el catálogo.
-CatalogImportFailures conserva fallos individuales, los reintenta de forma independiente y los
-aparta después de 8 fallos. Esto permite avanzar de página sin perder los items fallidos.
-RefreshEnabled también controla el procesador de estos reintentos.
+El presupuesto directo se coordina en Valkey: hasta 18 solicitudes globales por ventana
+de 60 segundos, con un subpresupuesto de 12 búsquedas y separación mínima de tres segundos.
+Mercado directo dispone de hasta una solicitud por minuto dentro del total, no adicional.
+Los reintentos HTTP internos están desactivados; cada nuevo intento vuelve a pasar por
+el presupuesto. El [respaldo directo](MARKET-DIRECT-FALLBACK.md) documenta reservas,
+recuperación y pausas 429 compartidas. Los proxies de mercado tienen sus propios presupuestos.
 
 ## Outbox y recuperación operativa
 
@@ -102,7 +103,8 @@ capturan eventos, y un guardado fallido conserva el evento sin duplicarlo al rei
 El procesador usa transacciones y FOR UPDATE SKIP LOCKED para coordinar múltiples consumidores.
 Los reintentos tienen espera creciente y cuarentena después de 8 fallos.
 La entrega es al menos una vez: cualquier futuro handler con efectos externos debe ser idempotente.
-El handler actual únicamente escribe un log; no se implementa SignalR ni notificaciones externas.
+El handler actual únicamente escribe un log; este handler no envía notificaciones externas.
+Las alertas Discord tienen su servicio independiente.
 
 Monitorizar:
 - CatalogImportFailures y OutboxMessages con DeadLetteredAtUtc no nulo.
@@ -116,34 +118,8 @@ DeadLetteredAtUtc y NextAttemptAtUtc de forma dirigida, conservando su ID.
 No reiniciar en masa mensajes sin revisar la idempotencia del handler.
 Para volver a recorrer un alcance ya completado, restablecer su checkpoint de manera dirigida.
 
-La clave administrativa por proceso y el ritmo local de llamadas no son cuotas distribuidas.
-Antes de multiplicar réplicas, coordinar el presupuesto global de llamadas a Roblox y el trabajo de
-bootstrap; las protecciones de concurrencia evitan sobrescrituras silenciosas pero no eliminan
-solicitudes HTTP duplicadas.
-
-## Límites HTTP 429 de Roblox
-
-Todos los clientes Roblox de un mismo proceso comparten una única puerta de solicitudes:
-una operación en vuelo y al menos 3 segundos entre operaciones. Este valor es una política
-conservadora de Liro, no una cuota oficial garantizada de Roblox.
-La puerta envuelve la resiliencia HTTP: la espera local no consume el timeout de red.
-Las llamadas de red y los reintentos 5xx de una operación se completan antes de admitir otra.
-
-Un 429 no se reintenta inmediatamente. Se respeta Retry-After (segundos o fecha HTTP);
-si no viene una espera positiva, se espera 1 minuto, luego 2, 4, etc., hasta 15 minutos.
-Una respuesta exitosa restablece ese contador. Durante esa pausa los demás clientes fallan
-localmente con la misma fecha de reanudación, sin enviar tráfico a Roblox.
-Los Workers esperan antes de continuar; el 429 no consume intentos de un item ni lo manda
-a cuarentena. La API responde 503 con Retry-After cuando el proveedor está limitado.
-
-Configurar Roblox:Requests:MinimumInterval, DefaultCooldown y MaximumFallbackCooldown.
-La configuración de Workers está en appsettings.json; los mismos valores por defecto se
-usan en la API. Los plazos indicados por Retry-After no se recortan al máximo de respaldo.
-
-El control es por proceso y en memoria. API, otra instancia de Workers, aplicaciones ajenas
-o una IP compartida pueden contribuir al límite del proveedor. No es una cuota distribuida
-ni evita todos los 429; no reiniciar procesos para intentar eludir el plazo del servidor.
-Los rechazos externos permanecen visibles en los logs en lugar de ocultarlos.
+La cuota administrativa de entrada es por proceso; no debe confundirse con el presupuesto
+saliente compartido en Valkey. Ver [convenciones y límites HTTP](docs/api-route-conventions.md).
 
 ## Recuperación de la vigilancia de Aspire 13.6.1
 
@@ -160,15 +136,15 @@ KubernetesClient con un canal HTTP simulado que primero se bloquea y después en
 un evento. La inspección por reflection queda únicamente en las pruebas; no modifican
 las políticas de Aspire ni arrancan Docker, Roblox o PostgreSQL.
 
-`verify.ps1` ejecuta ambas suites. Detener la ejecución anterior y reiniciar AppHost
+El script de verificación enlazado arriba incluye esta suite. Detener la ejecución anterior y reiniciar AppHost
 para cargar la corrección. El acceso real al dashboard se comprueba por separado.
 
 ## Convenciones y organización
 
 El backend tiene su propio `.editorconfig`: cuatro espacios en C#, llaves en líneas
 separadas y bloques de control expandidos. Las migraciones generadas por EF quedan
-fuera de la limpieza manual. `verify.ps1` comprueba el formato antes de compilar
-y ejecutar las dos suites de regresión.
+fuera de la limpieza manual. El script de verificación comprueba el formato antes de compilar
+y ejecutar las cuatro suites de regresión.
 
 Las firmas de métodos y constructores con hasta seis parámetros se escriben en una
 sola línea. Con más de seis parámetros pueden distribuirse en varias líneas.
@@ -180,7 +156,7 @@ inspeccionar el dato y colocar un breakpoint antes de devolverlo. Los filtros,
 ordenamientos y límites se mantienen antes de materializar la consulta.
 
 Los modelos de persistencia, configuraciones EF y stores se encuentran en archivos
-separados. Se conservan sus namespaces y contratos existentes. Los tres workers del
+separados. Se conservan sus namespaces y contratos existentes. Los workers del
 catálogo comparten `CatalogWorkerDelay` para la espera por límites de Roblox.
 
 La suite `Liro.RegressionTests` registra casos por área: catálogo, API, persistencia,
@@ -190,78 +166,29 @@ Las pruebas de bootstrap esperan la tarea del worker con un plazo máximo, sin s
 para adivinar cuándo terminó. Las aserciones verifican la URL exacta de miniatura,
 los IDs guardados y la propagación del estado HTTP 429.
 
-## Metadatos e historial comercial
+## Contratos, mercado e historial
 
-`Items.MarketplaceUrl` contiene el enlace estable `https://www.roblox.com/catalog/{RobloxAssetId}`
-y se expone también en la API. No depende del nombre traducido ni del slug. Es una columna
-generada y almacenada por PostgreSQL: la migración `AddItemMarketplaceUrl` completa también
-los objetos existentes, sin volver a importarlos. En memoria, el constructor genera el mismo
-enlace. No es un campo editable. El SQL de generación pertenece al esquema EF, no a una consulta.
-El importador actual acepta assets; los bundles usan otra identidad y `/bundles/{id}` y no
-se importan ni se etiquetan como assets en esta fase.
+La [guía frontend](docs/frontend/README.md) centraliza identidad Asset/Bundle,
+precios, disponibilidad, fechas y errores. [Las convenciones HTTP](docs/api-route-conventions.md)
+documentan listado y cursor; [las series de mercado](docs/market-history-api.md) describen
+RAP y ventas diarias. No confundir esas series con las observaciones de catálogo de
+`ItemMarketSnapshots` ni interpretar RAP como una transacción individual.
 
-`Items` conserva los registros existentes y añade descripción, creador (ID/tipo/nombre),
-tipo de asset, restricciones originales y fechas del objeto en Roblox. `MarketStatus`
-conserva los valores anteriores y añade `LimitedUnique = 3` y `Collectible = 4`.
-`collectibleItemId` no basta para clasificar un objeto como Limited. Las restricciones
-se conservan también como colección; una clasificación resumida no las sustituye.
+El seguimiento independiente se documenta en [mercado](docs/MERCADO-SEGUIMIENTO.md);
+el comportamiento de respaldo y las prioridades vigentes, en [respaldo directo](MARKET-DIRECT-FALLBACK.md).
 
-`ItemMarketState` guarda la última observación comercial por objeto. `ItemMarketSnapshots`
-guarda las observaciones anteriores, con fecha UTC y fuente. El importador guarda la ficha,
-el estado, el snapshot y los eventos del outbox en un mismo `SaveChanges`. El control de
-concurrencia del agregado sigue siendo `Items.xmin`; escribir directamente solo en la tabla
-de estado omitiría esa protección y no es una ruta admitida por la aplicación.
-
-Los campos de precio tienen significados independientes:
-- `PrimaryPriceRobux`: precio publicado de venta primaria, no precio de lanzamiento.
-- `PriceBeforeDiscountRobux`: referencia anterior al descuento actual.
-- `LowestPriceRobux`: valor reportado por Roblox, conservado sin reinterpretarlo.
-- `LowestResalePriceRobux`: precio mínimo de reventa reportado.
-
-La API añade `market` a la respuesta de los objetos. Incluye los datos observados,
-`observedAtUtc`, `source`, `availability` y `availablePriceRobux`. La disponibilidad es
-un resumen, no una garantía de compra para todo usuario (pueden existir restricciones
-por ubicación o cuenta). `NoSellers` corresponde a la etiqueta visual "No Sellers";
-`OffSale` corresponde a "Off Sale". Datos ausentes permanecen nulos; cero no significa
-"sin precio". Un fallo HTTP/429 no genera un snapshot ni borra el estado conocido.
-Una respuesta correcta pero parcial puede contener valores desconocidos: el histórico
-conserva la observación anterior, sin presentar su precio como si acabara de verificarse.
-
-`GET /api/v1/items/{id}/market-history?limit=100&before=2026-10-10T00:00:00Z`
-retorna observaciones de más reciente a más antigua. El límite válido es 1–200.
-Para la siguiente página se envía como `before` el `observedAtUtc` de la última fila;
-el cursor es exclusivo. Se limita y ordena en PostgreSQL antes de materializar.
-
-Los workers existentes completan los objetos antiguos gradualmente según su próxima
-actualización programada (30 minutos por defecto; sujeto a cola y límites de Roblox). El histórico comienza con las nuevas
-observaciones, sin reconstruir artificialmente el pasado. Esta fase no añade RAP,
-precio de última transacción, ventas diarias ni propietarios. Las cantidades total y
-disponible no se convierten en "copias vendidas". La fecha de modificación en Roblox
-permanece nula porque el endpoint verificado no la documenta.
-
-Fuente: POST `https://catalog.roblox.com/v1/catalog/items/details`, contrato oficial
-`https://catalog.roblox.com/docs/json/v1`. Se usa una petición de detalle por objeto;
-el contrato permite lotes, pero el planificador actual sigue procesando por objeto.
-Se mantienen el control compartido de tráfico y la pausa por HTTP 429.
-
-### Migración de esta ampliación
-
-`20261009214903_AddItemMarketObservations` añade ocho columnas a `Items` y crea las
- dos tablas comerciales. No elimina ni reconstruye tablas existentes. Se revisó el
-SQL generado y se comprueba que el modelo y el snapshot EF coincidan.
-
-El arranque actual aplica migraciones automáticamente en Development; en otros entornos
-exige que estén aplicadas. Antes de reiniciar con esta versión sobre datos importantes,
-realizar una copia de seguridad de `lirodb`. No iniciar una copia de trabajo del AppHost
-para validar la migración. La validación automatizada usa respuestas HTTP simuladas y
-no sustituye una prueba de migración y concurrencia sobre una copia de PostgreSQL.
+Como contexto de evolución, `20261009214903_AddItemMarketObservations` añadió metadatos
+y tablas de observaciones; `AddItemMarketplaceUrl` incorporó el enlace generado.
+El historial comienza con observaciones guardadas y no reconstruye automáticamente el pasado.
+Conservar las migraciones existentes y respaldar la base antes de cambios de esquema.
 
 ## Frecuencia de actualización del catálogo
 
 `Catalog:RefreshInterval` configura el intervalo tras una consulta exitosa (30 minutos
 por defecto), tanto en API como en Workers. Mantener el mismo valor en ambos procesos.
-Se aceptan intervalos de 1 minuto a 24 horas. El worker conserva los lotes de 50,
-la pausa entre ciclos de 5 minutos, el control de peticiones y los cooldowns de Roblox.
+Se aceptan intervalos de 1 minuto a 24 horas. La revisión histórica ordinaria está
+desactivada en la configuración operativa; este intervalo no sustituye la programación
+del monitor ni de las colas prioritarias.
 El intervalo indica elegibilidad: una cola grande o un 429 pueden retrasar la consulta.
 
 Al iniciar, las programaciones antiguas exactamente a 24 horas desde `LastCheckedAt`
@@ -276,8 +203,8 @@ Solo se importan objetos cuyo detalle confirme `creatorTargetId = 1` y `creatorT
 El nombre visible no acredita al creador. Los detalles sin identidad suficiente fallan
 para permitir un reintento, sin borrar datos existentes. Un creador ajeno confirmado
 se excluye y, si ya estaba almacenado, se elimina junto con su estado de mercado,
-snapshots y fallos. Al arrancar también se limpian los registros ajenos ya identificados,
-en una transacción; los creadores desconocidos se conservan hasta poder verificarlos.
+snapshots y fallos. El arranque ya no elimina registros por creador ni sus series asociadas;
+las operaciones explícitas del importador conservan su política existente.
 Los mensajes de outbox se conservan como registro de eventos anteriores.
 
 `RobloxCreatedAtUtc` conserva el primer `itemCreatedUtc` recibido.
@@ -289,5 +216,3 @@ conservada durante su siguiente importación exitosa. No representa un campo de
 modificación independiente publicado por Roblox ni la hora de consulta de Liro.
 
 El bot independiente de alertas para pruebas y producción está en `src/Liro.Discord.Alerts`. Consulta [configuración y despliegue](docs/discord-alerts.md).
-
-El backend sandbox aislado se prepara desde [deploy/sandbox](deploy/sandbox/README.md), con PostgreSQL y Valkey propios. Su script está en `scripts/sandbox/Manage-Sandbox.ps1`. No arranca desde el bot local ni comparte sus volúmenes.

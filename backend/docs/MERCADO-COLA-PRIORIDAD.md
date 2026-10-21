@@ -1,6 +1,8 @@
 # Cola de mercado por actividad
 
-La selección concede tres de cada cuatro turnos a artículos de actividad alta o muy alta y reserva uno al resto. Si el grupo preferido no tiene pendientes, el turno puede utilizarlo el otro grupo. Dentro de cada grupo se atiende primero la fecha efectiva más antigua. Las reservas PostgreSQL siguen evitando duplicados.
+> Contexto de validación: las poblaciones, frecuencias, cantidades de pruebas y presupuestos de 30/minuto y 6/proxy corresponden a esa etapa. Para configuración actual ver [seguimiento](MERCADO-SEGUIMIENTO.md); para salida directa, pausas y prioridades ver [respaldo directo](../MARKET-DIRECT-FALLBACK.md). No son mediciones repetidas en esta auditoría.
+
+La selección concede tres de cada cuatro turnos a artículos de actividad alta o muy alta y reserva uno al resto. Si el grupo preferido no tiene pendientes, el turno puede utilizarlo el otro grupo. En el grupo prioritario, MuyAlta precede a Alta; dentro de cada categoría se atiende primero el vencimiento más antiguo. Las reservas PostgreSQL siguen evitando duplicados.
 
 El plan se recalcula cada minuto con la población elegible y la suma de los cupos de los proxies activos. Usa como máximo el 90 % del menor presupuesto entre conexiones y mercado; reserva el 25 % de esa capacidad al fondo. Con 9 de actividad muy alta, 81 alta y cinco proxies de 6/minuto: objetivo de 2 minutos y 6 minutos respectivamente. Son objetivos de programación; la consulta, las esperas y el guardado añaden demora.
 

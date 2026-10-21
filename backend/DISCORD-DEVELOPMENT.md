@@ -131,6 +131,12 @@ la primera comprobación correcta crea o actualiza el mensaje sin reiniciar el b
 El estado reutiliza la dirección validada si permanece en la misma interfaz y
 subred local. No ejecuta dos veces PowerShell ni sondea dos veces la API por vuelta.
 Los inicios y reinicios conservan la validación completa de red y firewall.
+La ejecución de `Get-LanConfiguration.ps1` dispone de 30 segundos para cargar
+PowerShell y comprobar red/firewall. Los comandos de Docker mantienen 10 segundos
+y `aspire stop`, 60. La cancelación del arranque sigue teniendo prioridad; no se
+reintenta ni se abre otro proceso por ampliar este margen. El registro local
+añade `NetworkCheckStarted`, `NetworkCheckCompleted`, `NetworkCheckFailed` y
+`NetworkCheckTimedOut` sin incluir la salida de los comandos ni credenciales.
 El registro distingue PanelUpdated, PanelCheckTimedOut, PanelCheckFailed y
 PanelUpdateFailed; no registra URLs ni tokens.
 

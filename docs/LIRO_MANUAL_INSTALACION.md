@@ -1,5 +1,8 @@
 # LIRO — Manual de instalación del entorno de desarrollo
 
+> Estado documental (2026-10-21): se conserva el diseño y las instrucciones originales, no una certificación de funcionalidades o comandos vigentes. Consultar el [estado actual y las fuentes de verdad](../README.md), la [estructura de solución](../backend/docs/SOLUTION-STRUCTURE.md) y las instrucciones operativas de [backend](../backend/README.md) y [web](../web/liro-web/README.md). Liro.Workers es un nombre histórico; la solución actual es backend/Liro.slnx. SignalR, trading y valoración son objetivos; extension/ y roblox/ no tienen implementación. No ejecutar las instrucciones históricas de proyectos inexistentes.
+
+
 ## Objetivo
 
 Este documento prepara una PC Windows desde cero para desarrollar **Liro**.

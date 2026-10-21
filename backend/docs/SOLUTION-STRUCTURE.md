@@ -11,7 +11,7 @@ La estructura inicial del repositorio, documentada en [el manual del desarrollad
 
 Patrones acordados: eventos de dominio y Outbox; Ports & Adapters y normalización de Roblox; repositorios específicos y Unit of Work de EF Core; DI y DTO; Cache-Aside con Valkey; idempotencia, rate limiting, retry/backoff/circuit breaker; Strategy para algoritmos y Notification Provider/Pub-Sub para notificaciones. Son guías de uso, no una afirmación de que todos estén implementados.
 
-## Navegación actual en Visual Studio
+## Proyectos de desarrollo en Visual Studio
 
 ```text
 src
@@ -28,7 +28,6 @@ src
 │   └── Liro.Discord.Alerts
 └── Hosting
     ├── Liro.AppHost
-    ├── Liro.SandboxMigrator
     └── Liro.ServiceDefaults
 tests
 ├── Liro.RegressionTests
@@ -37,11 +36,10 @@ tests
 └── Liro.Discord.Alerts.RegressionTests
 ```
 
-Backend/Workers/Discord/Hosting son carpetas de solución en Liro.slnx. Las rutas físicas siguen siendo `backend/src/<proyecto>`. `Liro.CatalogWorker` sí sustituye la carpeta/proyecto anterior `Liro.Workers`, incluyendo namespaces, referencias del compilador, pruebas y referencia generada de Aspire.
+Backend/Workers/Discord/Hosting son carpetas de solución en Liro.slnx. Las rutas físicas de los servicios siguen siendo `backend/src/<proyecto>` y las pruebas en `backend/tests/<proyecto>`. `Liro.CatalogWorker` sí sustituye la carpeta/proyecto anterior `Liro.Workers`, incluyendo namespaces, referencias del compilador, pruebas y referencia generada de Aspire.
 
 | Proyecto | Responsabilidad |
 |---|---|
-| Liro.SandboxMigrator | Herramienta de despliegue en `tools/`: aplica migraciones únicamente a la base aislada del sandbox. No se ejecuta desde AppHost. |
 | Liro.Domain | Entidades, reglas y eventos del negocio; independiente de infraestructura. |
 | Liro.Application | Casos de uso y contratos; depende de Domain. |
 | Liro.Infrastructure | EF/PostgreSQL, Valkey, clientes y adaptadores; implementa contratos internos. |
@@ -70,7 +68,7 @@ Organizar y renombrar no completa una migración arquitectónica. MarketStore/Ma
 
 ## LocalControl: compatibilidad de instalación
 
-El proyecto, carpeta, namespaces y pruebas se llaman Liro.Discord.LocalControl. El script principal es Setup-DiscordLocalControl.ps1; Setup-DevelopmentAgent.ps1 se conserva como enlace compatible.
+El proyecto, carpeta, namespaces y pruebas se llaman Liro.Discord.LocalControl. El script vigente es [scripts/discord/Setup-DiscordLocalControl.ps1](../scripts/discord/Setup-DiscordLocalControl.ps1). El enlace antiguo Setup-DevelopmentAgent.ps1 fue retirado; no usarlo para instalaciones nuevas.
 
 Se mantiene explícitamente AssemblyName=Liro.DevelopmentAgent para que el ejecutable publicado siga coincidiendo con la tarea de Windows existente. También se conservan el nombre de tarea Liro.DevelopmentAgent, el directorio %LOCALAPPDATA%\Liro\DevelopmentAgent, el cifrado DPAPI y el bloqueo agent.lock. No hay una segunda instalación ni un segundo proceso por el cambio de nombre.
 

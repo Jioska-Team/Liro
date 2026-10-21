@@ -12,7 +12,7 @@ cursores; `RecentLimitedLimit=600` queda inactivo en esta modalidad.
 | Flujo | Alcance | Programación |
 |---|---|---|
 | Artículos recientes | Hasta 1.200 observaciones, creador User 1, orden de creación descendente, incluidos fuera de venta | Nueva pasada 5 minutos después de terminar |
-| Coleccionables | Todas las páginas disponibles con SalesTypeFilter=2 y orden de creación descendente, incluidos fuera de venta | Nueva pasada 1 minuto después de terminar; guarda cursor y vuelve a consultar la cabecera durante pasadas largas |
+| Coleccionables | Todas las páginas disponibles con SalesTypeFilter=2 y orden de creación descendente, incluidos fuera de venta | Nueva pasada inmediatamente después de terminar; cada página compite por presupuesto y turno. LimitedPollInterval controla la consulta de cabecera durante pasadas largas |
 | IDs conocidos | Lista persistente independiente del estado actual de Items; detalles por lotes de 100 | Cada ID vuelve a estar disponible 1 minuto después de confirmarse |
 | Búsquedas complementarias | 23 variantes por tipo de asset/bundle y orden, incluidos fuera de venta; una página por variante en cada turno | Nueva pasada 15 minutos después de terminar |
 | Actualización ordinaria | Recorrido de artículos antiguos existentes | Desactivada; los encontrados por búsqueda y los limiteds vigilados sí se actualizan |

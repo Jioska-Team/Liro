@@ -1,0 +1,39 @@
+{
+  "info": {
+    "name": "Liro - Importaciones administrativas",
+    "description": "Solo endpoint administrativo HTTPS. No usar baseUrl LAN ni incluir la clave en Angular. Definir adminBaseUrl, robloxId y adminApiKey en un entorno privado; no exportar secretos. Estas solicitudes importan o actualizan datos.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "X-Liro-Admin-Key", "type": "string" },
+      { "key": "value", "value": "{{adminApiKey}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "adminBaseUrl", "value": "", "type": "string" },
+    { "key": "robloxId", "value": "126", "type": "string" },
+    { "key": "itemType", "value": "Asset", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Importar asset o bundle - recomendada",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{adminBaseUrl}}/api/v1/catalog/imports",
+        "body": { "mode": "raw", "raw": "{\n  \"itemType\": \"{{itemType}}\",\n  \"robloxId\": {{robloxId}}\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Importar asset - compatible",
+      "request": { "method": "POST", "header": [], "url": "{{adminBaseUrl}}/api/v1/items/import/{{robloxId}}" }
+    },
+    {
+      "name": "Importar bundle - compatible",
+      "request": { "method": "POST", "header": [], "url": "{{adminBaseUrl}}/api/v1/items/import-bundle/{{robloxId}}" }
+    }
+  ]
+}

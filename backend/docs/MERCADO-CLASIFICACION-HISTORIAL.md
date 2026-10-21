@@ -1,5 +1,7 @@
 # Clasificación de mercado desde el historial guardado
 
+> Contexto de validación: las poblaciones, frecuencias, cantidades de pruebas y presupuestos de 30/minuto y 6/proxy corresponden a esa etapa. Para configuración actual ver [seguimiento](MERCADO-SEGUIMIENTO.md); para salida directa, pausas y prioridades ver [respaldo directo](../MARKET-DIRECT-FALLBACK.md). No son mediciones repetidas en esta auditoría.
+
 La clasificación usa exclusivamente los puntos de volumen `marketplace-sales` guardados, dentro de los siete días UTC completos anteriores a la observación. Una semana parcial demuestra un mínimo de ventas: 700 o más permiten prioridad MuyAlta, 70 Alta y 7 Media. `DailySales` solo contiene un promedio cuando existen los siete puntos diarios completos; los huecos no se convierten en ventas cero.
 
 Se distinguen InciertaReciente (puntos recientes insuficientes para demostrar la categoría media), SinVentasRecientes (existe volumen histórico pero no puntos de esa semana) y SinHistorial (sin volumen almacenado). Ninguna de las dos últimas categorías demuestra inactividad. Los siete ceros explícitos sí permiten Inactiva.

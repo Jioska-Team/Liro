@@ -1,9 +1,11 @@
 # API de Liro para frontend
 
-Contrato revisado contra el codigo del backend el 15 de octubre de 2026.
-Esta guia describe lo implementado, no endpoints futuros. Los modelos estan en
-[api-models.ts](api-models.ts) y las solicitudes importables en
+Guía actualizada contra controllers y política LAN el 21 de octubre de 2026.
+Esta guia describe lo implementado, no endpoints futuros. Los modelos auxiliares están en
+[api-models.ts](api-models.ts) y hay solicitudes importables en
 [liro-frontend.postman_collection.json](liro-frontend.postman_collection.json).
+Estos artefactos no garantizan cobertura de todas las rutas posteriores; no se modificaron
+TypeScript ni JSON en esta auditoría documental. Para listado y series, consultar las guías enlazadas.
 
 ## Conexion sin instalar el backend
 
@@ -38,10 +40,24 @@ UUID devuelto para solicitar el historial. Un ID que no cumple la restriccion de
 Consultar un item no lo importa ni fuerza una actualizacion desde Roblox.
 Un 404 puede significar que existe en Roblox pero aun no esta en Liro.
 
-**No existe GET `/api/v1/items` para listar todos los items**, ni busqueda por nombre,
-filtros por creador, favoritos de usuarios o endpoints de vendedores/propietarios.
-Un frontend que necesite una grilla del catalogo requiere acordar e implementar
-ese contrato. No intentar suplirlo enumerando IDs de Roblox.
+No existe GET `/api/v1/items`, pero la grilla ya dispone de
+`GET /api/v1/catalog?page=1&pageSize=24` y de `GET /api/v1/catalog/feed?pageSize=24`.
+Ver [contrato de listado y cursor](../api-route-conventions.md#lecturas-del-catalogo-y-cursor).
+No hay filtros públicos por nombre/creador ni endpoints de favoritos, vendedores o propietarios.
+
+También se permiten por LAN estas lecturas bajo las mismas reglas de subred y origen:
+
+| Ruta GET | Contrato |
+| --- | --- |
+| `/api/v1/catalog/bundles/{bundleId}/components` | Bundle, componentes y IDs pendientes; [relaciones](../catalogo-paquetes-componentes.md) |
+| `/api/v1/catalog/assets/{assetId}/bundles` | Bundles padres del asset |
+| `/api/v1/items/{id}/market-summary` | Resumen de seguimiento; distinto de `ItemResponse.market` |
+| `/api/v1/items/{id}/market-history/daily-sales` | [Serie diaria de ventas](../market-history-api.md) |
+| `/api/v1/items/{id}/market-history/rap` | [Serie de RAP observado](../market-history-api.md) |
+
+Los detalles de respuesta de market-summary están en
+[su contrato](../../src/Liro.Application/Catalog/Repositories/IItemMarketSummaryRepository.cs).
+Las consultas no importan ni fuerzan actualizaciones de Roblox.
 
 ### Historial y paginacion
 
@@ -126,8 +142,9 @@ Usar `market.availability` para la etiqueta:
 | `Unknown` | Sin informacion suficiente |
 
 No deducir disponibilidad solo de Limited, `isOffSale` o de un precio null.
-El modelo no incluye RAP, promedio diario de ventas, ultima transaccion, demanda,
-valor estimado ni propietarios. El historial registra estos mismos campos de mercado.
+Este modelo de observación de catálogo no incluye RAP, promedio diario de ventas,
+última transacción, demanda, valor estimado ni propietarios. RAP y ventas se consultan
+mediante las rutas de series independientes enlazadas arriba.
 
 ## Ejemplos
 
@@ -176,6 +193,9 @@ y `HttpClient.get<ItemMarketResponse[]>(url)` para historial. Configurar la base
 en configuracion local; no usar `withCredentials: true` ni interceptores que adjunten
 tokens a estas llamadas. No se requiere un SDK especifico de Liro.
 
+Las lecturas comparten cuotas por proceso e IP, además de la concurrencia de series;
+ver [límites HTTP](../api-route-conventions.md#proteccion-de-entrada-http).
+
 ## Errores
 
 | HTTP | Interpretacion / accion |
@@ -185,7 +205,7 @@ tokens a estas llamadas. No se requiere un SDK especifico de Liro.
 | 403 | Ruta/metodo no permitido o equipo fuera de subred; abrir `/` tambien produce 403 |
 | 404 | Item o ruta inexistente; no reintentar indefinidamente |
 | 409 | Conflicto de escritura o item duplicado; administrativo |
-| 429 | Limite de escrituras administrativas alcanzado |
+| 429 | Cuota de lecturas, concurrencia de series o escrituras alcanzada; respetar Retry-After y evitar reintentos simultáneos |
 | 500 | Error no previsto; reportar `traceId` si existe |
 | 502 | Proveedor externo no disponible o respuesta invalida |
 | 503 | Dependencias no listas; en limitacion de Roblox puede incluir `Retry-After` |
@@ -201,7 +221,8 @@ no equivale a un 403 HTTP recibido. Postman no verifica CORS.
 
 | Metodo/ruta | Uso / contrato |
 | --- | --- |
-| POST `/api/v1/items/import/{assetId}` | Importacion administrativa desde Roblox; sin body; 200 ItemResponse o 404 |
+| POST `/api/v1/catalog/imports` | Ruta recomendada de importacion; body `{ "itemType": "Asset", "robloxId": 215718515 }` o tipo `Bundle`; 200 ItemResponse o 404 |
+| POST `/api/v1/items/import/{assetId}` | Ruta compatible de importacion de assets; sin body; 200 ItemResponse o 404 |
 | POST `/api/v1/items` | Creacion administrativa; CreateItemRequest; 201 ItemResponse con Location, o 409 duplicado |
 | GET `/api/infrastructure` | Diagnostico local Development: postgres, valkey, valkeyLatencyMs; 200/503; 404 fuera de Development |
 | GET `/openapi/v1.json` | OpenAPI generado en Development; accesible por el endpoint local de administracion, bloqueado en LAN |
@@ -211,6 +232,11 @@ POST requiere HTTPS y `X-Liro-Admin-Key`, con 10 escrituras por minuto por proce
 en Angular. CreateItemRequest exige assetId positivo, nombre de 1 a 200 caracteres,
 collectibleItemId UUID o null y marketStatus numerico valido (0..4).
 El importador actualmente acepta solo el creador oficial segun la politica del backend.
+
+La nueva ruta conserva HTTPS, `CatalogAdmin` y el mismo limite `catalog-writes`
+de las rutas compatibles. `itemType` debe ser `Asset` o `Bundle` y `robloxId`
+un entero positivo. No hay retirada programada de las rutas anteriores.
+Ver [convencion de rutas](../api-route-conventions.md) para identidad, estados y migracion.
 Las rutas operativas `/health` y `/alive` tampoco se exponen por LAN.
 No hay Swagger UI instalado; no usar `/swagger` como enlace de documentacion.
 

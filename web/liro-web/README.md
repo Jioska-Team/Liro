@@ -1,59 +1,37 @@
-# LiroWeb
+# Liro Web
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.2.1.
+Aplicación Angular con SSR configurado. La interfaz actual consulta el catálogo paginado
+y los componentes de bundles mediante `src/app/core/api/catalog.ts`; no representa todavía
+todos los módulos del diseño global.
 
-## Development server
+## Desarrollo
 
-To start a local development server, run:
+Desde `web/liro-web/`, con Node compatible con los requisitos de
+[package-lock.json](package-lock.json) (en la rama 24, 24.15 o posterior):
 
-```bash
-ng serve
+```powershell
+npm ci
+npm start -- --proxy-config proxy.conf.json
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Abrir `http://localhost:4200`. [proxy.conf.json](proxy.conf.json) debe apuntar al endpoint
+real de la API local; su destino versionado es `https://localhost:7174`.
+El proxy se pasa explícitamente porque `angular.json` no lo configura por defecto.
+Para consumir el backend de otro equipo, seguir la [guía LAN y contrato HTTP](../../backend/docs/frontend/README.md).
+No incorporar claves administrativas en Angular.
 
-## Code scaffolding
+## Comprobaciones
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+- `npm run build`: compilación.
+- `npm test`: pruebas configuradas con Vitest.
+- `npm run serve:ssr:liro-web`: ejecutar el servidor después de compilar.
 
-```bash
-ng generate component component-name
-```
+No hay target e2e configurado. Estas instrucciones no implican que las comprobaciones se
+hayan ejecutado durante una edición documental.
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+[package.json](package.json) declara Angular `^22.2.0`, CLI/SSR `^22.2.1`,
+TypeScript `~6.0.2` y npm `11.19.0`; el lockfile fija las resoluciones.
+SignalR y Lightweight Charts son dependencias instaladas, no evidencia de integración funcional.
 
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the project run:
-
-```bash
-ng build
-```
-
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+La documentación Angular permanece aquí; los contratos del servidor se mantienen en
+[backend/docs/frontend](../../backend/docs/frontend/README.md).
