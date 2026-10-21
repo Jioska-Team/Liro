@@ -68,36 +68,13 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
             throw new JsonException("Catalog creator identity is missing; cannot confirm the official Roblox user.");
         }
 
-        var fromSearch = remote.Source == "RobloxCatalogSearchV2";
-        // A slower search response must not overwrite a newer completed refresh.
-        if (fromSearch && existing?.LastCheckedAt is { } checkedAt && remote.ObservedAtUtc < checkedAt)
-            return new CatalogImportOutcome(existing, false);
-        var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ItemType);
-        var catalogChanged = existing is null;
-        if (existing is not null)
+        var (item, save, resolveFailure) = ApplyObservation(existing, remote);
+        if (!save)
         {
-            catalogChanged = item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus);
-        }
-
-        if (remote.Details is not null)
-        {
-            catalogChanged |= item.UpdateDetails(remote.Details);
-        }
-        if (remote.BundleComponentAssetIds is { } components)
-            catalogChanged |= item.UpdateBundleComponents(components, remote.ObservedAtUtc);
-
-        if (fromSearch && existing is not null && !catalogChanged
-            && (remote.Market is null || item.MarketState?.Data == remote.Market))
-        {
-            await failures.ResolveAsync(key, cancellationToken);
+            if (resolveFailure)
+                await failures.ResolveAsync(key, cancellationToken);
             return new CatalogImportOutcome(item, false);
         }
-
-        if (remote.Market is not null)
-        {
-            item.ObserveMarket(remote.Market, remote.ObservedAtUtc, remote.Source);
-        }
-
         if (refreshThumbnail && refreshPolicy.ShouldRefreshThumbnail(item, DateTime.UtcNow))
         {
             item.MarkThumbnailChecked(DateTime.UtcNow);
@@ -135,6 +112,40 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
 
         await failures.ResolveAsync(key, cancellationToken);
         return new CatalogImportOutcome(item, existing is null);
+    }
+    // Callers validate identity/ownership and own persistence and external I/O.
+    public static (Item Item, bool Save, bool ResolveFailure) ApplyObservation(Item? existing, RobloxCatalogItem remote)
+    {
+        var fromSearch = remote.Source == "RobloxCatalogSearchV2";
+        // A slower search response must not overwrite a newer completed refresh.
+        if (fromSearch && existing?.LastCheckedAt is { } checkedAt && remote.ObservedAtUtc < checkedAt)
+            return (existing, false, false);
+        var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ItemType);
+        var catalogChanged = existing is null;
+        if (existing is not null)
+        {
+            catalogChanged = item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus);
+        }
+
+        if (remote.Details is not null)
+        {
+            catalogChanged |= item.UpdateDetails(remote.Details);
+        }
+        if (remote.BundleComponentAssetIds is { } components)
+            catalogChanged |= item.UpdateBundleComponents(components, remote.ObservedAtUtc);
+
+        if (fromSearch && existing is not null && !catalogChanged
+            && (remote.Market is null || item.MarketState?.Data == remote.Market))
+        {
+            return (item, false, true);
+        }
+
+        if (remote.Market is not null)
+        {
+            item.ObserveMarket(remote.Market, remote.ObservedAtUtc, remote.Source);
+        }
+
+        return (item, true, true);
     }
     public async Task<Item?> ImportAsync(long assetId, CancellationToken cancellationToken = default)
     {

@@ -15,6 +15,15 @@ if (args.Length == 1 && args[0] == "--lan-components-only")
     BundleComponentOwnershipTests.Register(targeted);
     return await targeted.RunAsync();
 }
+if (args.Length == 1 && args[0] == "--catalog-refactor-only")
+{
+    var targeted = new RegressionSuite();
+    DatabaseBatchTests.Register(targeted);
+    BundleTests.Register(targeted);
+    SearchDetailsTests.Register(targeted);
+    BatchTests.Register(targeted);
+    return await targeted.RunAsync();
+}
 // Never report a green run after silently omitting database-dependent cases.
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;

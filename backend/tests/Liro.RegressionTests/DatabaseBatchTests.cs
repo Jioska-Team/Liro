@@ -86,6 +86,44 @@ internal static class DatabaseBatchTests
             Check.That(probe.Saves == 1 && probe.Added == 1 && probe.DeletedFailures == 1 && result.RetryIndividually.SequenceEqual(new CatalogItemKey[] { new(2) }),
                 "Poison record blocked valid data or successful retry cleanup was separate");
         });
+        foreach (var stale in new[] { false, true })
+            suite.AsyncTest($"Search observation stale={stale} preserves retry semantics", async () =>
+            {
+                var remote = Remote(1) with { Market = null };
+                var existing = new Item(1, remote.Name, remote.CollectibleItemId, remote.MarketStatus);
+                existing.UpdateDetails(remote.Details!);
+                existing.MarkChecked(remote.ObservedAtUtc.AddMinutes(stale ? 1 : -1), TimeSpan.FromMinutes(30));
+                var probe = new Probe { Existing = existing, Failures = [new() { AssetId = 1, NextAttemptAtUtc = DateTime.UtcNow.AddHours(-1) }] };
+                using var db = Database(probe);
+                var result = await Writer(db).WriteAsync(new Dictionary<CatalogItemKey, RobloxCatalogItem> { [new(1)] = remote }, false, default);
+                Check.That(result.Added == 0 && result.Updated == 0 && result.RetryIndividually.Count == 0
+                    && probe.Saves == (stale ? 0 : 1) && probe.DeletedFailures == (stale ? 0 : 1)
+                    && probe.Snapshots == 0 && probe.Events == 0, "No-op observation changed market history or retry resolution");
+            });
+        suite.AsyncTest("Database batch keeps equal numeric Asset and Bundle IDs separate", async () =>
+        {
+            var probe = new Probe();
+            using var db = Database(probe);
+            var result = await Writer(db).WriteAsync(new Dictionary<CatalogItemKey, RobloxCatalogItem>
+            {
+                [new(1)] = Remote(1), [new(1, CatalogItemType.Bundle)] = Remote(1, CatalogItemType.Bundle)
+            }, false, default);
+            Check.That(result.Added == 2 && probe.Added == 2 && probe.Snapshots == 2 && probe.Saves == 1,
+                "Asset and Bundle collided in batch identity");
+        });
+        suite.AsyncTest("Database batch retries mismatched identity and foreign creator without saving", async () =>
+        {
+            var probe = new Probe();
+            using var db = Database(probe);
+            var result = await Writer(db).WriteAsync(new Dictionary<CatalogItemKey, RobloxCatalogItem>
+            {
+                [new(1)] = Remote(1, CatalogItemType.Bundle),
+                [new(2)] = Remote(2) with { Details = new() { CreatorId = 99, CreatorType = "User" } }
+            }, false, default);
+            Check.That(result.RetryIndividually.SequenceEqual(new CatalogItemKey[] { new(1), new(2) })
+                && result.Added == 0 && result.Updated == 0 && probe.Saves == 0,
+                "Invalid identity or external ownership bypassed individual validation");
+        });
         suite.AsyncTest("Database save conflict requests fresh individual fallback", async () =>
         {
             var probe = new Probe { FailSave = true };
@@ -120,7 +158,7 @@ internal static class DatabaseBatchTests
     private static LiroDbContext Database(Probe probe) => new(new DbContextOptionsBuilder<LiroDbContext>()
         .UseNpgsql("Host=localhost;Database=unused;Username=unused;Password=unused")
         .AddInterceptors(new DeletionConnectionProbe(), new Reads(probe), new Saves(probe)).Options);
-    private static CatalogPageWriter Writer(LiroDbContext db) => new(db, new(), NullLogger<Liro.Application.Catalog.Services.ImportRobloxItemService>.Instance, NullLogger<CatalogPageWriter>.Instance);
+    private static CatalogPageWriter Writer(LiroDbContext db) => new(db, new(), NullLogger<CatalogPageWriter>.Instance);
     private sealed class Probe
     {
         public Item? Existing;

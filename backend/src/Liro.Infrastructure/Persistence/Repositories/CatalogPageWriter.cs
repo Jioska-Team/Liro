@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Text.Json;
 using Liro.Application.Catalog.Repositories;
 using Liro.Application.Catalog.Services;
-using Liro.Application.RobloxIntegration;
 using Liro.Application.RobloxIntegration.Models;
 using Liro.Domain.Catalog.Entities;
 using Liro.Domain.Catalog.Enums;
@@ -14,7 +13,7 @@ using Npgsql;
 namespace Liro.Infrastructure.Persistence.Repositories;
 
 public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy policy,
-    ILogger<ImportRobloxItemService> importLogger, ILogger<CatalogPageWriter> logger) : ICatalogPageWriter
+    ILogger<CatalogPageWriter> logger) : ICatalogPageWriter
 {
     public async Task<CatalogPageWriteResult> WriteAsync(IReadOnlyDictionary<CatalogItemKey, RobloxCatalogItem> observations, bool onlyNew, CancellationToken cancellationToken)
     {
@@ -37,15 +36,18 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
             .ToListAsync(cancellationToken);
         var readMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         var preparation = Stopwatch.GetTimestamp();
-        var buffer = new PageBuffer(existing, failures);
-        var importer = new ImportRobloxItemService(new UnusedCatalog(), buffer, new UnusedThumbnail(), importLogger, buffer, policy);
+        var existingByKey = existing.ToDictionary(x => new CatalogItemKey(x.RobloxAssetId, x.ItemType));
+        var failuresByKey = failures.ToDictionary(x => new CatalogItemKey(x.AssetId, x.ItemType));
+        var added = new List<Item>();
+        var updated = new List<Item>();
+        var resolvedKeys = new HashSet<CatalogItemKey>();
         var retry = new List<CatalogItemKey>();
         var skipped = 0;
         foreach (var (key, remote) in observations)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!await buffer.CanAttemptAsync(key, DateTime.UtcNow, cancellationToken)
-                || (onlyNew && buffer.Existing.ContainsKey(key)))
+            if ((failuresByKey.TryGetValue(key, out var failure) && (failure.DeadLetteredAtUtc is not null || failure.NextAttemptAtUtc > DateTime.UtcNow))
+                || (onlyNew && existingByKey.ContainsKey(key)))
             {
                 skipped++;
                 continue;
@@ -58,7 +60,17 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
             }
             try
             {
-                await importer.ApplyWithOutcomeAsync(key, remote, onlyNew, cancellationToken, refreshThumbnail: false);
+                if (remote.AssetId != key.Id || remote.ItemType != key.Type)
+                    throw new JsonException("Roblox returned a different asset ID.");
+                var previous = existingByKey.GetValueOrDefault(key);
+                var (item, save, resolveFailure) = ImportRobloxItemService.ApplyObservation(previous, remote);
+                if (resolveFailure)
+                    resolvedKeys.Add(key);
+                if (save)
+                {
+                    item.MarkChecked(DateTime.UtcNow, policy.Interval);
+                    (previous is null ? added : updated).Add(item);
+                }
             }
             catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
             {
@@ -68,17 +80,17 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
         }
         var prepareMs = Stopwatch.GetElapsedTime(preparation).TotalMilliseconds;
         var saving = Stopwatch.GetTimestamp();
-        foreach (var item in buffer.Added)
+        foreach (var item in added)
             db.Items.Add(item);
-        foreach (var item in buffer.Updated)
+        foreach (var item in updated)
             db.Items.Update(item);
-        var resolved = failures.Where(x => buffer.Resolved.Contains(new(x.AssetId, x.ItemType))).ToArray();
+        var resolved = failures.Where(x => resolvedKeys.Contains(new(x.AssetId, x.ItemType))).ToArray();
         db.RemoveRange(resolved);
         try
         {
             // One SaveChanges: items, market states, snapshots, outbox and resolved retries
             // participate in EF's implicit transaction and existing execution strategy.
-            if (buffer.Added.Count + buffer.Updated.Count + resolved.Length > 0)
+            if (added.Count + updated.Count + resolved.Length > 0)
                 await db.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
@@ -93,52 +105,8 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
             throw new CatalogBatchWriteException(exception);
         }
         logger.LogInformation("Catalog database batch saved. Candidates: {Candidates}, Added: {Added}, Updated: {Updated}, IndividualFallback: {Fallback}, ReadMs: {ReadMs}, PrepareMs: {PrepareMs}, SaveMs: {SaveMs}",
-            observations.Count, buffer.Added.Count, buffer.Updated.Count, retry.Count, readMs, prepareMs, Stopwatch.GetElapsedTime(saving).TotalMilliseconds);
-        return new(buffer.Added.Count, buffer.Updated.Count, skipped, retry);
+            observations.Count, added.Count, updated.Count, retry.Count, readMs, prepareMs, Stopwatch.GetElapsedTime(saving).TotalMilliseconds);
+        return new(added.Count, updated.Count, skipped, retry);
     }
 
-    private sealed class PageBuffer(IEnumerable<Item> existing, IEnumerable<CatalogImportFailure> failures) : IItemRepository, ICatalogImportFailureStore
-    {
-        public Dictionary<CatalogItemKey, Item> Existing { get; } = existing.ToDictionary(x => new CatalogItemKey(x.RobloxAssetId, x.ItemType));
-        private readonly Dictionary<CatalogItemKey, CatalogImportFailure> errors = failures.ToDictionary(x => new CatalogItemKey(x.AssetId, x.ItemType));
-        public List<Item> Added { get; } = [];
-        public List<Item> Updated { get; } = [];
-        public HashSet<CatalogItemKey> Resolved { get; } = [];
-        public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(Existing.GetValueOrDefault(key));
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken cancellationToken = default) => GetByCatalogIdAsync(new(id), cancellationToken);
-        public Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Existing.Values.FirstOrDefault(x => x.Id == id));
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken cancellationToken = default) => Task.FromResult(Existing.ContainsKey(new(id)));
-        public Task AddAsync(Item item, CancellationToken cancellationToken = default)
-        {
-            Added.Add(item);
-            return Task.CompletedTask;
-        }
-        public Task UpdateAsync(Item item, CancellationToken cancellationToken = default)
-        {
-            Updated.Add(item);
-            return Task.CompletedTask;
-        }
-        public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken cancellationToken) =>
-            Task.FromResult(!errors.TryGetValue(key, out var failure) || (failure.DeadLetteredAtUtc is null && failure.NextAttemptAtUtc <= now));
-        public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken cancellationToken) => CanAttemptAsync(new CatalogItemKey(id), now, cancellationToken);
-        public Task ResolveAsync(CatalogItemKey key, CancellationToken cancellationToken)
-        {
-            Resolved.Add(key);
-            return Task.CompletedTask;
-        }
-        public Task ResolveAsync(long id, CancellationToken cancellationToken) => ResolveAsync(new CatalogItemKey(id), cancellationToken);
-        public Task DeleteByAssetIdAsync(long id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime now, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken cancellationToken) => throw new NotSupportedException();
-    }
-    private sealed class UnusedCatalog : IRobloxCatalogClient
-    {
-        public Task<RobloxCatalogItem?> GetItemAsync(long id, CancellationToken cancellationToken = default) => throw new NotSupportedException("Page observations already contain details.");
-    }
-    private sealed class UnusedThumbnail : IRobloxThumbnailClient
-    {
-        public Task<string?> GetAssetThumbnailAsync(long id, CancellationToken cancellationToken = default) => throw new NotSupportedException("Page writes do not request images.");
-    }
 }
