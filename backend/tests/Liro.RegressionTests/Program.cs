@@ -45,6 +45,15 @@ if (args.Length == 1 && args[0] == "--http-contracts-only")
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;
 
+if (args.Length == 1 && args[0] == "--market-integrity-only")
+{
+    var targeted = new RegressionSuite();
+    MarketDataIntegrityTests.Register(targeted);
+    MarketReclassificationTests.Register(targeted);
+    MarketTrackingTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
 var suite = new RegressionSuite();
 ValkeyLossTests.Register(suite);
 if (args.Contains("--valkey-loss-only")) return await suite.RunAsync();
@@ -75,6 +84,7 @@ if (args.Contains("--csrf-diagnostics-only")) return await suite.RunAsync();
 MarketLifecycleTests.Register(suite);
 if (args.Contains("--market-lifecycle-only")) return await suite.RunAsync();
 MarketProxyFailureTests.Register(suite);
+MarketDataIntegrityTests.Register(suite);
 MarketTrackingTests.Register(suite);
 MarketReclassificationTests.Register(suite);
 MarketHttpClientTests.Register(suite);

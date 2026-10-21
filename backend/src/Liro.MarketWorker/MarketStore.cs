@@ -76,6 +76,8 @@ public sealed class MarketStore(LiroDbContext db)
             var activities = batch.Select(x => x.Activity).ToArray();
             var daily = batch.Select(x => x.ExactDailySales).ToArray();
             // Read and pace outside the gate; only this bounded update competes with saves/claims.
+            // A page may observe a save newer than this scan, especially across midnight UTC.
+            // Keep that newer classification instead of applying the scan's earlier sales window.
             if (writes is not null)
                 await writes.WaitAsync(ct);
             try
@@ -84,6 +86,7 @@ public sealed class MarketStore(LiroDbContext db)
                 UPDATE "MarketWatches" w SET "Activity"=e.activity, "DailySales"=round(e.daily,6)
                 FROM unnest({ids}::uuid[],{last}::timestamptz[],{activities}::text[],{daily}::numeric[]) e(id,last,activity,daily)
                 WHERE w."ItemId"=e.id AND w."LastSuccessAtUtc" IS NOT DISTINCT FROM e.last
+                    AND (e.last IS NULL OR e.last <= {asOf})
                     AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc"<=NOW())
                     AND (w."Activity" IS DISTINCT FROM e.activity OR w."DailySales" IS DISTINCT FROM round(e.daily,6))
                 """, ct);
