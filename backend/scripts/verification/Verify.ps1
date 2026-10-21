@@ -28,6 +28,8 @@ try {
     dotnet run --project tests/Liro.Discord.Alerts.RegressionTests --no-build --no-restore
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & (Join-Path $backendRoot 'tests/Liro.Discord.LocalControl.RegressionTests/Scripts.Tests.ps1')
+    & pwsh -NoProfile -File (Join-Path $backendRoot 'tests/Liro.RegressionTests/DatabaseDiscovery.Tests.ps1')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 finally {
     Pop-Location

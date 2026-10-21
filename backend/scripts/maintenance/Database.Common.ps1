@@ -2,20 +2,34 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Get-LiroDatabaseConnection([string]$AspireTempRoot) {
-    if ($env:LIRO_BACKUP_POSTGRES) { return $env:LIRO_BACKUP_POSTGRES }
-    foreach ($run in (Get-ChildItem -LiteralPath $AspireTempRoot -Directory -Filter 'aspire-dcp*' | Sort-Object LastWriteTime -Descending | Select-Object -First 5)) {
+    if (![string]::IsNullOrWhiteSpace($env:LIRO_BACKUP_POSTGRES)) { return $env:LIRO_BACKUP_POSTGRES }
+    # Bind discovery to this checkout, not merely to a resource/database name.
+    $expectedDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../src/Liro.Api')).TrimEnd([char[]]'\/')
+    $matches = [Collections.Generic.List[string]]::new()
+    foreach ($run in (Get-ChildItem -LiteralPath $AspireTempRoot -Directory -Filter 'aspire-dcp*')) {
         $kube = Join-Path $run.FullName 'kubeconfig'
         if (!(Test-Path -LiteralPath $kube)) { continue }
         $json = & kubectl --kubeconfig $kube --request-timeout=8s get executables -o json 2>$null
         if ($LASTEXITCODE -ne 0) { continue }
-        $resources = ($json | ConvertFrom-Json).items
+        try { $resources = (ConvertFrom-Json -InputObject ($json -join "`n") -AsHashtable -ErrorAction Stop).items }
+        catch { throw 'No se pudo verificar la identidad de las instancias Aspire. Configure LIRO_BACKUP_POSTGRES explicitamente.' }
         foreach ($resource in $resources) {
             if ($resource.metadata.name -notlike 'api-*' -or $resource.status.state -ne 'Running') { continue }
+            $directory = $resource.spec.workingDirectory
+            if ([string]::IsNullOrWhiteSpace($directory) -or ![IO.Path]::IsPathFullyQualified($directory)) { continue }
+            try { $directory = [IO.Path]::GetFullPath($directory).TrimEnd([char[]]'\/') }
+            catch { continue }
+            if (![string]::Equals($directory, $expectedDirectory, [StringComparison]::OrdinalIgnoreCase)) { continue }
             $connection = @($resource.spec.env | Where-Object name -eq 'ConnectionStrings__lirodb')
-            if ($connection.Count -eq 1) { return $connection[0].value }
+            if ($connection.Count -ne 1 -or [string]::IsNullOrWhiteSpace($connection[0].value)) {
+                throw 'La instancia de Liro no tiene una conexion unica. Configure LIRO_BACKUP_POSTGRES explicitamente.'
+            }
+            $matches.Add($connection[0].value)
         }
     }
-    throw 'No se encontro una instancia local de Aspire accesible. No se inicio ni reinicio ningun servicio.'
+    if ($matches.Count -eq 1) { return $matches[0] }
+    if ($matches.Count -gt 1) { throw 'Hay varias instancias de Liro. Configure LIRO_BACKUP_POSTGRES explicitamente; no se selecciono ninguna base.' }
+    throw 'No se encontro una instancia verificable de este proyecto Liro. Configure LIRO_BACKUP_POSTGRES explicitamente; no se inicio ningun servicio.'
 }
 
 function Initialize-PgEnvironment([string]$Connection) {
