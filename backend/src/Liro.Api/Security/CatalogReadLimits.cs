@@ -23,6 +23,17 @@ public static class CatalogReadLimits
             PartitionedRateLimiter.Create<HttpContext, string>(context => IsRead(context)
                 ? RateLimitPartition.GetFixedWindowLimiter(
                     context.Connection.RemoteIpAddress?.MapToIPv6().ToString() ?? "unknown", _ => Window(60))
+                : RateLimitPartition.GetNoLimiter("unrestricted")),
+            // Independent admission for the LAN dependency probe: no queued database work.
+            PartitionedRateLimiter.Create<HttpContext, string>(context => IsLanReadiness(context)
+                ? RateLimitPartition.GetConcurrencyLimiter("lan-readiness", _ => new ConcurrencyLimiterOptions
+                {
+                    PermitLimit = 2,
+                    QueueLimit = 0
+                })
+                : RateLimitPartition.GetNoLimiter("unrestricted")),
+            PartitionedRateLimiter.Create<HttpContext, string>(context => IsLanReadiness(context)
+                ? RateLimitPartition.GetFixedWindowLimiter("lan-readiness", _ => Window(60))
                 : RateLimitPartition.GetNoLimiter("unrestricted")));
         options.OnRejected = async (context, ct) =>
         {
@@ -41,6 +52,9 @@ public static class CatalogReadLimits
         AutoReplenishment = true
     };
 
+    private static bool IsLanReadiness(HttpContext context) =>
+        (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)) &&
+        (context.Request.Path.Value ?? "").TrimEnd('/').Equals("/api/lan/ready", StringComparison.OrdinalIgnoreCase);
     private static bool IsRead(HttpContext context) =>
         (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)) &&
         (context.Request.Path.StartsWithSegments("/api/v1/catalog") || context.Request.Path.StartsWithSegments("/api/v1/items"));

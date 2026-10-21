@@ -7,6 +7,13 @@ if (args.Length == 1 && args[0] == "--market-lanes-only")
     MarketConcurrencyTests.RegisterLanes(lanes);
     return await lanes.RunAsync();
 }
+if (args.Length == 1 && args[0] == "--lan-readiness-only")
+{
+    var targeted = new RegressionSuite();
+    LanReadinessTests.Register(targeted);
+    LanReadinessLimitTests.Register(targeted);
+    return await targeted.RunAsync();
+}
 // Never report a green run after silently omitting database-dependent cases.
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;
@@ -67,4 +74,5 @@ WorkerTests.Register(suite);
 ApiTests.Register(suite);
 LanAccessTests.Register(suite);
 LanReadinessTests.Register(suite);
+LanReadinessLimitTests.Register(suite);
 return await suite.RunAsync();

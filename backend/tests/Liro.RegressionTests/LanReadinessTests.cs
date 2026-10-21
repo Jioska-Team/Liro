@@ -37,7 +37,7 @@ internal static class LanReadinessTests
         });
     }
 
-    private static DevelopmentLanAccess Access()
+    internal static DevelopmentLanAccess Access()
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
