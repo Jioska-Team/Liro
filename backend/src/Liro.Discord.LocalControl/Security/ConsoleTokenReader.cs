@@ -28,7 +28,10 @@ public static class ConsoleTokenReader
         {
             var restored = SetConsoleMode(handle, original);
             Console.WriteLine();
-            if (restored == 0) { throw new SetupFailure("No se pudo restaurar la consola. Cierra esta ventana y abre otra."); }
+            if (restored == 0)
+            {
+                throw new SetupFailure("No se pudo restaurar la consola. Cierra esta ventana y abre otra.");
+            }
         }
     }
 

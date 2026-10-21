@@ -18,9 +18,12 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
 {
     public async Task<CatalogPageWriteResult> WriteAsync(IReadOnlyDictionary<CatalogItemKey, RobloxCatalogItem> observations, bool onlyNew, CancellationToken cancellationToken)
     {
-        if (observations.Count > 120) throw new ArgumentOutOfRangeException(nameof(observations));
-        if (observations.Count == 0) return new(0, 0, 0, []);
-        foreach (var key in observations.Keys) key.Validate();
+        if (observations.Count > 120)
+            throw new ArgumentOutOfRangeException(nameof(observations));
+        if (observations.Count == 0)
+            return new(0, 0, 0, []);
+        foreach (var key in observations.Keys)
+            key.Validate();
         var started = Stopwatch.GetTimestamp();
         var assets = observations.Keys.Where(x => x.Type == CatalogItemType.Asset).Select(x => x.Id).ToArray();
         var bundles = observations.Keys.Where(x => x.Type == CatalogItemType.Bundle).Select(x => x.Id).ToArray();
@@ -42,11 +45,21 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!await buffer.CanAttemptAsync(key, DateTime.UtcNow, cancellationToken)
-                || (onlyNew && buffer.Existing.ContainsKey(key))) { skipped++; continue; }
+                || (onlyNew && buffer.Existing.ContainsKey(key)))
+            {
+                skipped++;
+                continue;
+            }
             // Deletions have dependent records and use the existing individual transaction path.
             if (remote.Details?.CreatorId != 1 || !string.Equals(remote.Details.CreatorType, "User", StringComparison.OrdinalIgnoreCase))
-            { retry.Add(key); continue; }
-            try { await importer.ApplyWithOutcomeAsync(key, remote, onlyNew, cancellationToken, refreshThumbnail: false); }
+            {
+                retry.Add(key);
+                continue;
+            }
+            try
+            {
+                await importer.ApplyWithOutcomeAsync(key, remote, onlyNew, cancellationToken, refreshThumbnail: false);
+            }
             catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
             {
                 retry.Add(key);
@@ -55,8 +68,10 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
         }
         var prepareMs = Stopwatch.GetElapsedTime(preparation).TotalMilliseconds;
         var saving = Stopwatch.GetTimestamp();
-        foreach (var item in buffer.Added) db.Items.Add(item);
-        foreach (var item in buffer.Updated) db.Items.Update(item);
+        foreach (var item in buffer.Added)
+            db.Items.Add(item);
+        foreach (var item in buffer.Updated)
+            db.Items.Update(item);
         var resolved = failures.Where(x => buffer.Resolved.Contains(new(x.AssetId, x.ItemType))).ToArray();
         db.RemoveRange(resolved);
         try
@@ -67,9 +82,12 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
                 await db.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException
-            || exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation
+            || exception.InnerException is PostgresException
+            {
+                SqlState: PostgresErrorCodes.UniqueViolation
                 or PostgresErrorCodes.CheckViolation or PostgresErrorCodes.NotNullViolation or PostgresErrorCodes.ForeignKeyViolation
-                or PostgresErrorCodes.StringDataRightTruncation or PostgresErrorCodes.NumericValueOutOfRange })
+                or PostgresErrorCodes.StringDataRightTruncation or PostgresErrorCodes.NumericValueOutOfRange
+            })
         {
             // The caller disposes this scope before retrying; never reuse partially mutated entities.
             throw new CatalogBatchWriteException(exception);
@@ -90,12 +108,24 @@ public sealed class CatalogPageWriter(LiroDbContext db, CatalogRefreshPolicy pol
         public Task<Item?> GetByAssetIdAsync(long id, CancellationToken cancellationToken = default) => GetByCatalogIdAsync(new(id), cancellationToken);
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Existing.Values.FirstOrDefault(x => x.Id == id));
         public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken cancellationToken = default) => Task.FromResult(Existing.ContainsKey(new(id)));
-        public Task AddAsync(Item item, CancellationToken cancellationToken = default) { Added.Add(item); return Task.CompletedTask; }
-        public Task UpdateAsync(Item item, CancellationToken cancellationToken = default) { Updated.Add(item); return Task.CompletedTask; }
+        public Task AddAsync(Item item, CancellationToken cancellationToken = default)
+        {
+            Added.Add(item);
+            return Task.CompletedTask;
+        }
+        public Task UpdateAsync(Item item, CancellationToken cancellationToken = default)
+        {
+            Updated.Add(item);
+            return Task.CompletedTask;
+        }
         public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken cancellationToken) =>
             Task.FromResult(!errors.TryGetValue(key, out var failure) || (failure.DeadLetteredAtUtc is null && failure.NextAttemptAtUtc <= now));
         public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken cancellationToken) => CanAttemptAsync(new CatalogItemKey(id), now, cancellationToken);
-        public Task ResolveAsync(CatalogItemKey key, CancellationToken cancellationToken) { Resolved.Add(key); return Task.CompletedTask; }
+        public Task ResolveAsync(CatalogItemKey key, CancellationToken cancellationToken)
+        {
+            Resolved.Add(key);
+            return Task.CompletedTask;
+        }
         public Task ResolveAsync(long id, CancellationToken cancellationToken) => ResolveAsync(new CatalogItemKey(id), cancellationToken);
         public Task DeleteByAssetIdAsync(long id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeferRefreshAsync(long id, DateTime time, CancellationToken cancellationToken = default) => throw new NotSupportedException();

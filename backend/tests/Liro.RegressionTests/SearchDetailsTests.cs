@@ -41,8 +41,14 @@ internal static class SearchDetailsTests
             using var http = Http([bundle]);
             var page = await Client(http).GetPageAsync(CatalogSearchScope.All, false, null, default);
             var scopes = provider.GetRequiredService<IServiceScopeFactory>();
-            var first = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, true, new() { ItemDelay = TimeSpan.Zero }, default);
-            var second = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, true, new() { ItemDelay = TimeSpan.Zero }, default);
+            var first = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, true, new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, default);
+            var second = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, true, new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, default);
             Check.That(first.Added == 2 && first.Failed == 0 && second.Added == 0 && second.Failed == 0 && repo.Saves == 2, "Replay duplicated writes or failed to import bundle components");
             Check.That(repo.Items.Keys.ToHashSet().SetEquals(new CatalogItemKey[] { new(10), new(10, CatalogItemType.Bundle) }) && !repo.Items.ContainsKey(new(99)), "Foreign creator imported or typed identities collided");
             Check.That(repo.Items[new(10)].MarketState?.Data.IsOffSale == true, "Off-sale component was dropped or lost its sale state");
@@ -55,7 +61,10 @@ internal static class SearchDetailsTests
             using var provider = Provider(repo, catalog);
             using var http = Http([Entry(10, "Bundle")]);
             var page = await Client(http).GetPageAsync(CatalogSearchScope.All, false, null, default);
-            page = page with { BundledAssets = new CatalogItemKey[] { new(20) } };
+            page = page with
+            {
+                BundledAssets = new CatalogItemKey[] { new(20) }
+            };
             await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new(), default, fetchFallback: false);
             Check.That(catalog.Calls.Count == 0 && repo.Items.Count == 1, "Priority monitor blocked on component details");
         });
@@ -112,7 +121,10 @@ internal static class SearchDetailsTests
             using var provider = Provider(repo, catalog, allowImages: true);
             using var http = Http([Entry(1), new { id = 2, itemType = "Asset" }]);
             var page = await Client(http).GetPageAsync(CatalogSearchScope.All, true, null, default);
-            var result = await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new() { ItemDelay = TimeSpan.Zero }, default);
+            var result = await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, default);
             Check.That(result.Added == 2 && result.Failed == 0 && catalog.Calls.SequenceEqual(new CatalogItemKey[] { new(2) }), "Healthy item redundantly fetched or incomplete item lost");
         });
         suite.AsyncTest("Search excludes foreign creator and rejects duplicate details", async () =>
@@ -135,7 +147,10 @@ internal static class SearchDetailsTests
             using var http = Http([Entry(1)]);
             var page = await Client(http).GetPageAsync(CatalogSearchScope.All, true, null, default);
             var result = page.Details[new(1)];
-            page = page with { Details = new Dictionary<CatalogItemKey, RobloxCatalogResult> { [new(1)] = result with { Item = result.Item! with { ObservedAtUtc = item.LastCheckedAt!.Value.AddMinutes(-1) } } } };
+            page = page with
+            {
+                Details = new Dictionary<CatalogItemKey, RobloxCatalogResult> { [new(1)] = result with { Item = result.Item! with { ObservedAtUtc = item.LastCheckedAt!.Value.AddMinutes(-1) } } }
+            };
             await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new(), default);
             Check.That(item.Name == "Current" && item.MarketStatus == ItemMarketStatus.LimitedUnique && repo.Saves == 0, "Late search reverted newer details");
         });
@@ -155,13 +170,34 @@ internal static class SearchDetailsTests
 
     private static object Entry(int id, string type = "Asset", int creator = 1) => new
     {
-        id, itemType = type, name = "Item " + id, creatorTargetId = creator, creatorType = "User", creatorName = "Roblox",
-        assetType = type == "Asset" ? (int?)8 : null, bundleType = type == "Bundle" ? (int?)1 : null,
-        itemRestrictions = new[] { "Limited" }, itemCreatedUtc = "2025-01-01T00:00:00Z", description = "Details", price = 10, isOffSale = false
+        id,
+        itemType = type,
+        name = "Item " + id,
+        creatorTargetId = creator,
+        creatorType = "User",
+        creatorName = "Roblox",
+        assetType = type == "Asset" ? (int?)8 : null,
+        bundleType = type == "Bundle" ? (int?)1 : null,
+        itemRestrictions = new[] { "Limited" },
+        itemCreatedUtc = "2025-01-01T00:00:00Z",
+        description = "Details",
+        price = 10,
+        isOffSale = false
     };
     private static HttpClient Http(IEnumerable<object> entries, Action? requested = null) => new(new StubHttp(_ =>
-    { requested?.Invoke(); return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new { data = entries })) }; }))
-    { BaseAddress = new("https://catalog.roblox.com/") };
+    {
+        requested?.Invoke();
+        return new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new
+            {
+                data = entries
+            }))
+        };
+    }))
+    {
+        BaseAddress = new("https://catalog.roblox.com/")
+    };
     private static RobloxCatalogDiscoveryClient Client(HttpClient http) => new(http, Options.Create(new RobloxCatalogOptions()));
     private static ServiceProvider Provider(Repository repo, FallbackCatalog catalog, bool allowImages = false, IRobloxCatalogDiscoveryClient? discovery = null, ICatalogPageWriter? writer = null)
     {
@@ -174,7 +210,8 @@ internal static class SearchDetailsTests
         services.AddLogging();
         services.AddScoped<ImportRobloxItemService>();
         services.AddScoped<CatalogImportProcessor>();
-        if (writer is not null) services.AddScoped<ICatalogPageWriter>(_ => writer);
+        if (writer is not null)
+            services.AddScoped<ICatalogPageWriter>(_ => writer);
         if (discovery is not null)
         {
             services.AddSingleton(discovery);
@@ -186,7 +223,10 @@ internal static class SearchDetailsTests
     private sealed class NoConfirmationQueue : ICatalogPriorityQueue
     {
         public Task EnqueueAsync(IReadOnlyCollection<CatalogItemKey> keys, DateTime time, CancellationToken ct)
-        { Check.That(keys.Count == 0, "Complete observation enqueued for redundant confirmation"); return Task.CompletedTask; }
+        {
+            Check.That(keys.Count == 0, "Complete observation enqueued for redundant confirmation");
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<CatalogPriorityEntry>> GetDueAsync(DateTime now, int limit, CancellationToken ct) => throw new NotSupportedException();
         public Task CompleteAsync(CatalogPriorityEntry entry, CancellationToken ct) => throw new NotSupportedException();
         public Task<CatalogQueueHealth> GetHealthAsync(DateTime now, CancellationToken ct) => throw new NotSupportedException();
@@ -196,7 +236,10 @@ internal static class SearchDetailsTests
         public bool Disposed;
         public int Calls;
         public Task<CatalogPageWriteResult> WriteAsync(IReadOnlyDictionary<CatalogItemKey, RobloxCatalogItem> observations, bool onlyNew, CancellationToken ct)
-        { Calls++; throw new CatalogBatchWriteException(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("conflict")); }
+        {
+            Calls++;
+            throw new CatalogBatchWriteException(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("conflict"));
+        }
         public void Dispose() => Disposed = true;
     }
     private sealed class ForbiddenImages : IRobloxThumbnailClient
@@ -215,13 +258,31 @@ internal static class SearchDetailsTests
     }
     private sealed class FallbackCatalog : IRobloxCatalogClient
     {
-        public bool OffSale { get; init; }
-        public long? ForeignId { get; init; }
+        public bool OffSale
+        {
+            get; init;
+        }
+        public long? ForeignId
+        {
+            get; init;
+        }
         public List<CatalogItemKey> Calls { get; } = [];
         public Task<RobloxCatalogItem?> GetItemAsync(long id, CancellationToken ct = default)
         {
             Calls.Add(new(id));
-            return Task.FromResult<RobloxCatalogItem?>(new(id, "Fallback", null, ItemMarketStatus.Normal) { ObservedAtUtc = DateTime.UtcNow, Market = OffSale ? new() { IsOffSale = true } : null, Details = new() { CreatorId = id == ForeignId ? 99 : 1, CreatorType = "User" } });
+            return Task.FromResult<RobloxCatalogItem?>(new(id, "Fallback", null, ItemMarketStatus.Normal)
+            {
+                ObservedAtUtc = DateTime.UtcNow,
+                Market = OffSale ? new()
+                {
+                    IsOffSale = true
+                } : null,
+                Details = new()
+                {
+                    CreatorId = id == ForeignId ? 99 : 1,
+                    CreatorType = "User"
+                }
+            });
         }
     }
     private sealed class Repository(params Item[] initial) : IItemRepository
@@ -229,13 +290,26 @@ internal static class SearchDetailsTests
         public Action? OnRead;
         public Dictionary<CatalogItemKey, Item> Items { get; } = initial.ToDictionary(x => new CatalogItemKey(x.RobloxAssetId, x.ItemType));
         public int Saves;
-        public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) { OnRead?.Invoke(); return Task.FromResult(Items.GetValueOrDefault(key)); }
+        public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default)
+        {
+            OnRead?.Invoke();
+            return Task.FromResult(Items.GetValueOrDefault(key));
+        }
         public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => GetByCatalogIdAsync(new(id), ct);
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Items.Values.FirstOrDefault(x => x.Id == id));
         public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(new(id)));
         public Task AddAsync(Item item, CancellationToken ct = default) => UpdateAsync(item, ct);
-        public Task UpdateAsync(Item item, CancellationToken ct = default) { Saves++; Items[new(item.RobloxAssetId, item.ItemType)] = item; return Task.CompletedTask; }
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default) { Items.Remove(new(id)); return Task.CompletedTask; }
+        public Task UpdateAsync(Item item, CancellationToken ct = default)
+        {
+            Saves++;
+            Items[new(item.RobloxAssetId, item.ItemType)] = item;
+            return Task.CompletedTask;
+        }
+        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default)
+        {
+            Items.Remove(new(id));
+            return Task.CompletedTask;
+        }
         public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
         public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime time, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>([]);
     }

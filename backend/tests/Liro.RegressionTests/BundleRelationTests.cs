@@ -8,6 +8,7 @@ using Liro.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Liro.RegressionTests;
+
 internal static class BundleRelationTests
 {
     public static void Register(RegressionSuite suite)

@@ -47,11 +47,15 @@ internal static class RobloxTests
         {
             foreach (var fail in new[] { false, true })
             {
-                var global = new CountingBudget(); var searches = new CountingBudget();
+                var global = new CountingBudget();
+                var searches = new CountingBudget();
                 using var gate = new RobloxRequestGate(Microsoft.Extensions.Options.Options.Create(new RobloxRequestOptions { MinimumInterval = TimeSpan.Zero }),
                     TimeProvider.System, NullLogger<RobloxRequestGate>.Instance, global, new(searches));
                 using var request = new HttpRequestMessage(HttpMethod.Get, "https://catalog.roblox.com/v2/search/items/details");
-                try { using var response = await gate.SendAsync(_ => fail ? throw new HttpRequestException("simulado") : Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)), default, request); }
+                try
+                {
+                    using var response = await gate.SendAsync(_ => fail ? throw new HttpRequestException("simulado") : Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)), default, request);
+                }
                 catch (HttpRequestException) when (fail) { }
                 Check.That(global.Calls == 1 && global.Completions == 1 && searches.Calls == 1 && searches.Completions == 1, "Una reserva no se contabilizo o no se cerro");
             }
@@ -259,8 +263,16 @@ internal static class RobloxTests
         public int Calls;
         public int Completions;
         public TimeSpan Delay;
-        public Task CompleteAsync(string reservationId, CancellationToken ct) { Completions++; return Task.CompletedTask; }
-        public Task<TimeSpan> TryAcquireAsync(string reservationId, CancellationToken ct) { Calls++; return Task.FromResult(Delay); }
+        public Task CompleteAsync(string reservationId, CancellationToken ct)
+        {
+            Completions++;
+            return Task.CompletedTask;
+        }
+        public Task<TimeSpan> TryAcquireAsync(string reservationId, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult(Delay);
+        }
     }
     private sealed class TrafficLogger : Microsoft.Extensions.Logging.ILogger<RobloxRequestGate>
     {

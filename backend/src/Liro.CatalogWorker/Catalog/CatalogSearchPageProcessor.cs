@@ -63,10 +63,13 @@ public static class CatalogSearchPageProcessor
             }
             using var scope = scopes.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<CatalogImportProcessor>();
-            if (!await processor.CanProcessAsync(key, onlyNew, cancellationToken)) continue;
+            if (!await processor.CanProcessAsync(key, onlyNew, cancellationToken))
+                continue;
             var outcome = await processor.ProcessResultAsync(key, result, onlyNew, cancellationToken, refreshThumbnail: false);
-            if (outcome.Added) added++;
-            if (outcome.Failed) failed++;
+            if (outcome.Added)
+                added++;
+            if (outcome.Failed)
+                failed++;
             reused++;
         }
         if (fetchFallback && fallback.Count > 0)

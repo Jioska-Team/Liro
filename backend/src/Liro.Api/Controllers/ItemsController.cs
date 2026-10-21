@@ -42,6 +42,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
         return response;
     }
+    // Compatibility route. New clients use POST /api/v1/catalog/imports.
     [HttpPost("import-bundle/{bundleId:long}")]
     [Authorize(Policy = "CatalogAdmin")]
     [EnableRateLimiting("catalog-writes")]
@@ -55,6 +56,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
         return response;
     }
+    // Compatibility route. Keep the original status codes, authorization and shared write budget.
     [HttpPost("import/{assetId:long}")]
     [Authorize(Policy = "CatalogAdmin")]
     [EnableRateLimiting("catalog-writes")]

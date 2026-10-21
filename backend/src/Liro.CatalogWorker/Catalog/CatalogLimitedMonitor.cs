@@ -11,10 +11,14 @@ public sealed class CatalogLimitedMonitor(IServiceScopeFactory scopes, IOptions<
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!settings.Value.LimitedMonitorEnabled) return;
+        if (!settings.Value.LimitedMonitorEnabled)
+            return;
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await PollAsync(stoppingToken); }
+            try
+            {
+                await PollAsync(stoppingToken);
+            }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (RobloxRateLimitedException exception)
             {
@@ -62,7 +66,8 @@ public sealed class CatalogLimitedMonitor(IServiceScopeFactory scopes, IOptions<
         while (!string.IsNullOrWhiteSpace(cursor))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!visited.Add(cursor)) throw new System.Text.Json.JsonException("Limited search returned a cyclic cursor chain.");
+            if (!visited.Add(cursor))
+                throw new System.Text.Json.JsonException("Limited search returned a cyclic cursor chain.");
             if (System.Diagnostics.Stopwatch.GetElapsedTime(lastHead) >= settings.Value.LimitedPollInterval)
             {
                 // A long scan must not delay newly published entries until the end of the pass.
@@ -73,7 +78,10 @@ public sealed class CatalogLimitedMonitor(IServiceScopeFactory scopes, IOptions<
                 items += newest.ReturnedCount;
             }
             RobloxCatalogDiscoveryPage tail;
-            try { tail = await ReadPendingPageAsync(client, cursor, cancellationToken); }
+            try
+            {
+                tail = await ReadPendingPageAsync(client, cursor, cancellationToken);
+            }
             catch (HttpRequestException exception) when (exception.StatusCode == System.Net.HttpStatusCode.BadRequest)
             {
                 await checkpoints.SaveAsync(key, new(null, false), cancellationToken);

@@ -6,9 +6,18 @@ namespace Liro.Infrastructure.Persistence;
 
 public sealed class CatalogPriorityRefresh
 {
-    public long ItemId { get; set; }
-    public CatalogItemType ItemType { get; set; }
-    public DateTime DetectedAtUtc { get; set; }
+    public long ItemId
+    {
+        get; set;
+    }
+    public CatalogItemType ItemType
+    {
+        get; set;
+    }
+    public DateTime DetectedAtUtc
+    {
+        get; set;
+    }
 }
 
 public sealed class CatalogPriorityRefreshConfiguration : IEntityTypeConfiguration<CatalogPriorityRefresh>

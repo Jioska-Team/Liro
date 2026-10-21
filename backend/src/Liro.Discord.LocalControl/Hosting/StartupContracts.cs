@@ -1,15 +1,24 @@
 namespace Liro.Discord.LocalControl.Hosting;
 
 public sealed record LanEndpoint(Uri ApiBaseUri, string Address, int PrefixLength, int InterfaceIndex);
-public enum AppHostState { Stopped, Starting, Running, Incompatible, Unknown }
-public enum StartupStatus { Ready, DockerUnavailable, AppHostUnavailable, NetworkChanged, TimedOut, ConfigurationError, Stopped, Busy, Starting, Restarting, Stopping, Unhealthy, Unknown }
+public enum AppHostState
+{
+    Stopped, Starting, Running, Incompatible, Unknown
+}
+public enum StartupStatus
+{
+    Ready, DockerUnavailable, AppHostUnavailable, NetworkChanged, TimedOut, ConfigurationError, Stopped, Busy, Starting, Restarting, Stopping, Unhealthy, Unknown
+}
 public sealed record StartupResult(StartupStatus Status, Uri? ApiBaseUri = null);
 public interface ILanNetworkResolver
 {
     Task<LanEndpoint> ResolveAsync(CancellationToken cancellationToken);
     Task<LanEndpoint> ResolveForStatusAsync(CancellationToken cancellationToken) => ResolveAsync(cancellationToken);
 }
-public interface IReadinessProbe { Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken cancellationToken); }
+public interface IReadinessProbe
+{
+    Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken cancellationToken);
+}
 public interface ILocalRuntime
 {
     Task<bool> IsDockerReadyAsync(CancellationToken cancellationToken);

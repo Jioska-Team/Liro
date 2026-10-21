@@ -11,10 +11,16 @@ internal static class SetupTests
     {
         suite.Test("Token paste preserves content and rejects invalid input", () =>
         {
-            if (ConsoleTokenReader.Normalize("  synthetic.token-value_123  ") != "synthetic.token-value_123") { throw new Exception("Paste changed"); }
+            if (ConsoleTokenReader.Normalize("  synthetic.token-value_123  ") != "synthetic.token-value_123")
+            {
+                throw new Exception("Paste changed");
+            }
             foreach (var value in new string?[] { null, "", "  ", "Bot synthetic", "a\tb", "a\nb", "a\u001bb", "\"synthetic\"" })
             {
-                try { ConsoleTokenReader.Normalize(value); }
+                try
+                {
+                    ConsoleTokenReader.Normalize(value);
+                }
                 catch (SetupFailure) { continue; }
                 throw new Exception("Invalid token accepted");
             }
@@ -25,9 +31,15 @@ internal static class SetupTests
             {
                 var error = new HttpException((System.Net.HttpStatusCode)status, null!, (global::Discord.DiscordErrorCode)code, "synthetic-secret-response");
                 var message = SafeDiagnostic.Describe(error);
-                if (!message.Contains(expected) || !message.Contains(status.ToString()) || message.Contains("synthetic-secret")) { throw new Exception("Unsafe or incorrect diagnosis"); }
+                if (!message.Contains(expected) || !message.Contains(status.ToString()) || message.Contains("synthetic-secret"))
+                {
+                    throw new Exception("Unsafe or incorrect diagnosis");
+                }
             }
-            if (SafeDiagnostic.Describe(new Exception("synthetic-secret-response")).Contains("synthetic-secret")) { throw new Exception("Exception leaked"); }
+            if (SafeDiagnostic.Describe(new Exception("synthetic-secret-response")).Contains("synthetic-secret"))
+            {
+                throw new Exception("Exception leaked");
+            }
         });
     }
 }

@@ -38,7 +38,10 @@ internal static class LifecycleBoundaryTests
             await new LocalRuntime(new AgentOptions { BackendPath = backend }, commands).StopAppHostAsync(default);
             Assert(commands.Arguments.SequenceEqual(new[] { "stop", "--apphost", Path.Combine(backend, "src", "Liro.AppHost", "Liro.AppHost.csproj"), "--non-interactive" }));
             commands.Fail = true;
-            try { await new LocalRuntime(new AgentOptions { BackendPath = backend }, commands).StopAppHostAsync(default); }
+            try
+            {
+                await new LocalRuntime(new AgentOptions { BackendPath = backend }, commands).StopAppHostAsync(default);
+            }
             catch (InvalidOperationException exception) { Assert(!exception.Message.Contains("secret")); return; }
             throw new Exception("Failed stop was accepted");
         });
@@ -81,22 +84,52 @@ internal static class LifecycleBoundaryTests
         });
     }
 
-    private static void Assert(bool condition) { if (!condition) { throw new Exception("Lifecycle boundary invariant failed"); } }
+    private static void Assert(bool condition)
+    {
+        if (!condition)
+        {
+            throw new Exception("Lifecycle boundary invariant failed");
+        }
+    }
     private sealed class CoordinatorFake : IStartupCoordinator
     {
         public List<string> Calls = [];
         public Task<StartupResult> EnsureReadyAsync(CancellationToken token) => throw new Exception("Button must restart");
-        public Task<StartupResult> RestartAsync(CancellationToken token) { Calls.Add("restart"); return Task.FromResult(new StartupResult(StartupStatus.Ready, new Uri("http://192.168.1.2:5205/"))); }
-        public Task<StartupResult> StopAsync(CancellationToken token) { Calls.Add("stop"); return Task.FromResult(new StartupResult(StartupStatus.Stopped)); }
-        public Task<StartupResult> GetStatusAsync(CancellationToken token) { Calls.Add("status"); return Task.FromResult(new StartupResult(StartupStatus.Unhealthy)); }
+        public Task<StartupResult> RestartAsync(CancellationToken token)
+        {
+            Calls.Add("restart");
+            return Task.FromResult(new StartupResult(StartupStatus.Ready, new Uri("http://192.168.1.2:5205/")));
+        }
+        public Task<StartupResult> StopAsync(CancellationToken token)
+        {
+            Calls.Add("stop");
+            return Task.FromResult(new StartupResult(StartupStatus.Stopped));
+        }
+        public Task<StartupResult> GetStatusAsync(CancellationToken token)
+        {
+            Calls.Add("status");
+            return Task.FromResult(new StartupResult(StartupStatus.Unhealthy));
+        }
     }
     private sealed class Reply : IButtonReply
     {
         public bool Denied, Deferred;
         public string Message = "";
-        public Task DeferAsync() { Deferred = true; return Task.CompletedTask; }
-        public Task DenyAsync() { Denied = true; return Task.CompletedTask; }
-        public Task CompleteAsync(string message) { Message = message; return Task.CompletedTask; }
+        public Task DeferAsync()
+        {
+            Deferred = true;
+            return Task.CompletedTask;
+        }
+        public Task DenyAsync()
+        {
+            Denied = true;
+            return Task.CompletedTask;
+        }
+        public Task CompleteAsync(string message)
+        {
+            Message = message;
+            return Task.CompletedTask;
+        }
     }
     private sealed class Commands : ICommandRunner
     {

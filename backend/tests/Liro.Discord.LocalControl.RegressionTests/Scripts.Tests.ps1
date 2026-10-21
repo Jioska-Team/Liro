@@ -1,5 +1,6 @@
 param([string]$BackendRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path)
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 # Mock all OS mutations. These tests must never touch real firewall rules, tasks or processes.
 $global:LiroTest_tasks = @{}
 $global:LiroTest_stopped = @()
@@ -36,11 +37,11 @@ function Enable-ScheduledTask { [CmdletBinding()]param($TaskName,$TaskPath) $glo
 function Get-Process {
     [CmdletBinding()]param($Name)
     if ($global:LiroTest_running -or $global:LiroTest_respawn) {
-        $process = [pscustomobject]@{Id=101;Path=$(if ($global:LiroTest_unknownPath) {$null} else {Join-Path $env:LOCALAPPDATA 'Liro\DevelopmentAgent\app\Liro.DevelopmentAgent.exe'})}
-        $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($timeout) $global:LiroTest_events += 'wait'; return $true }
+        $process = [pscustomobject]@{Id=101;HasExited=$false;Path=$(if ($global:LiroTest_unknownPath) {$null} else {Join-Path $env:LOCALAPPDATA 'Liro\DevelopmentAgent\app\Liro.DevelopmentAgent.exe'})}
+        $process | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($timeout) $global:LiroTest_events += 'wait'; $this.HasExited=$true; return $true }
         $process
     }
-    [pscustomobject]@{Id=102;Path='C:\Other\Liro.DevelopmentAgent.exe'}
+    [pscustomobject]@{Id=102;HasExited=$false;Path='C:\Other\Liro.DevelopmentAgent.exe'}
 }
 function Stop-Process {
     [CmdletBinding()]param($Id,$InputObject,[switch]$Force)

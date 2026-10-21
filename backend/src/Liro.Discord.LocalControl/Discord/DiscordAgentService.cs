@@ -19,22 +19,33 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
     private IUserMessage? panelMessage;
     private ConnectionMessageStore? connections;
     private int connectionRestored;
-    public bool HasFailed { get; private set; }
+    private GatewayDiagnostics? gateway;
+    public bool HasFailed
+    {
+        get; private set;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         stopping = stoppingToken;
+        await using var diagnosticLog = new GatewayDiagnosticLog(AgentOptions.LocalDirectory);
+        gateway = new GatewayDiagnostics(TimeProvider.System, diagnosticLog.Write);
         panel = new BackendPanelUpdater(startup, TimeProvider.System, PublishPanelAsync);
         connections = new ConnectionMessageStore(AgentOptions.LocalDirectory, options.ChannelId, options.PanelMessageId,
             new ConnectionTransport(client, options));
         client.ButtonExecuted += OnButtonAsync;
-        client.Connected += () => { log.Write(AgentEvent.Connected); return Task.CompletedTask; };
-        client.Disconnected += _ => { log.Write(AgentEvent.Disconnected); return Task.CompletedTask; };
+        client.Connected += () => { gateway.Connected(); log.Write(AgentEvent.Connected); return Task.CompletedTask; };
+        client.Disconnected += error => { gateway.Disconnected(error); log.Write(AgentEvent.Disconnected); return Task.CompletedTask; };
+        client.Ready += () => { gateway.SessionReady(); return Task.CompletedTask; };
+        using var monitor = new Timer(_ => gateway.Check(), null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         try
         {
             await client.LoginAsync(TokenType.Bot, credentials.Read());
             var application = await client.GetApplicationInfoAsync();
-            if (application.Id != options.ApplicationId) { throw new InvalidOperationException("El token no corresponde a la aplicacion configurada."); }
+            if (application.Id != options.ApplicationId)
+            {
+                throw new InvalidOperationException("El token no corresponde a la aplicacion configurada.");
+            }
             await client.StartAsync();
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
             do
@@ -60,6 +71,7 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
         }
         finally
         {
+            gateway.Stop();
             try
             {
                 using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -80,9 +92,16 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
             var request = new ButtonRequest(component.GuildId, component.ChannelId ?? 0, component.Message.Id, component.Data.CustomId,
                 component.User is SocketGuildUser user ? user.Roles.Select(role => role.Id).ToArray() : []);
             var reply = new DiscordReply(component, replies, connections!, options.ShareAspireInChannel, stopping);
-            if (pending.Count >= 64) { await reply.DenyAsync(); return; }
+            if (pending.Count >= 64)
+            {
+                await reply.DenyAsync();
+                return;
+            }
             var ownerRequest = request.CustomId == DashboardInteractionHandler.ButtonId;
-            if (!ownerRequest && !await handler.AcknowledgeAsync(request, reply)) { return; }
+            if (!ownerRequest && !await handler.AcknowledgeAsync(request, reply))
+            {
+                return;
+            }
             // Return to the gateway after deferral; startup must not block heartbeat processing.
             var key = Guid.NewGuid();
             var task = ownerRequest
@@ -98,7 +117,10 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(12));
-        if (panel is null) { return; }
+        if (panel is null)
+        {
+            return;
+        }
         var version = connections!.Version;
         try
         {
@@ -109,7 +131,8 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
                 try
                 {
                     var message = InteractionHandler.ConnectionDetails(ready.ApiBaseUri);
-                    if (options.ShareAspireInChannel) message = await dashboard.AppendToStartupAsync(message, 0, token);
+                    if (options.ShareAspireInChannel)
+                        message = await dashboard.AppendToStartupAsync(message, 0, token);
                     await connections.ShowAsync(message, token, version);
                 }
                 catch (Exception) { Interlocked.Exchange(ref connectionRestored, 0); log.Write(AgentEvent.Failed); }
@@ -145,6 +168,7 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
                 properties.AllowedMentions = AllowedMentions.None;
             }, requests);
             log.Write(AgentEvent.PanelUpdated);
+            gateway?.PanelAvailable();
         }
         catch
         {
@@ -156,7 +180,10 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
 
     private async Task RemoveWhenCompletedAsync(Guid key, Task task)
     {
-        try { await task; }
+        try
+        {
+            await task;
+        }
         finally { pending.TryRemove(key, out _); }
     }
 
@@ -197,7 +224,10 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
         }
         public async Task CompleteAsync(string message)
         {
-            if (lease is null || !registry.IsCurrent(lease)) { return; }
+            if (lease is null || !registry.IsCurrent(lease))
+            {
+                return;
+            }
             await component.ModifyOriginalResponseAsync(properties =>
             {
                 properties.Content = message;

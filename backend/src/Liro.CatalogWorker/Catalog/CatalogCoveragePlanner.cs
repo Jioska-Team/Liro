@@ -16,10 +16,16 @@ public static class CatalogCoveragePlanner
             roots.Add(new(CatalogSearchScope.Premium));
             roots.Add(new(CatalogSearchScope.TimedOptions));
             foreach (var category in new[] { 1, 2, 5, 7 })
-                roots.Add(new(CatalogSearchScope.All) { CategoryFilter = category });
+                roots.Add(new(CatalogSearchScope.All)
+                {
+                    CategoryFilter = category
+                });
             // No price bounds: off-sale items remain eligible even without a usable price.
             foreach (var sort in new[] { 2, 4, 5 })
-                roots.Add(new(CatalogSearchScope.All) { SortType = sort });
+                roots.Add(new(CatalogSearchScope.All)
+                {
+                    SortType = sort
+                });
         }
         var result = roots.DistinctBy(partition => partition.Key).OrderBy(partition => partition.Keyword is null ? 1 : 0).ToArray();
         return result;
@@ -75,7 +81,10 @@ public static class CatalogCoveragePlanner
         if (options.CoverageAdditionalFiltersEnabled)
         {
             foreach (var sort in new[] { 2, 4, 5 })
-                children.Add(next with { SortType = sort });
+                children.Add(next with
+                {
+                    SortType = sort
+                });
         }
         return children;
     }

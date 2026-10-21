@@ -15,7 +15,10 @@ public sealed class BundleComponentsWorker(IServiceScopeFactory scopes, IOptions
     {
         while (!ct.IsCancellationRequested)
         {
-            try { await PollAsync(ct); }
+            try
+            {
+                await PollAsync(ct);
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch (RobloxRateLimitedException ex) { await CatalogWorkerDelay.WaitForRateLimitAsync(ex, settings.Value.RetryDelay, logger, ct); }
             catch (Exception ex) { logger.LogWarning(ex, "No se pudieron actualizar las relaciones de paquetes; se reintentara."); }
@@ -35,8 +38,10 @@ public sealed class BundleComponentsWorker(IServiceScopeFactory scopes, IOptions
         }
         var keys = await repository.GetBundlesDueAsync(DateTime.UtcNow.AddDays(-1), 100, ct);
         // Alternative details are individual HTTP requests; bound their impact on other monitors.
-        if (keys.Count == 0) keys = await repository.GetMissingComponentsAsync(10, ct);
-        if (keys.Count == 0) return;
+        if (keys.Count == 0)
+            keys = await repository.GetMissingComponentsAsync(10, ct);
+        if (keys.Count == 0)
+            return;
         var results = (await scope.ServiceProvider.GetRequiredService<IRobloxCatalogClient>().GetItemsAsync(keys, ct)).ToDictionary(x => x.Key, x => x.Value);
         var valid = new List<CatalogItemKey>();
         foreach (var key in keys)
@@ -50,7 +55,9 @@ public sealed class BundleComponentsWorker(IServiceScopeFactory scopes, IOptions
                     result = new(alternative, alternative is null ? "El componente no está disponible en catálogo ni en detalles de Roblox." : null);
                 }
                 catch (Exception ex) when (ex is System.Text.Json.JsonException || ex is HttpRequestException { StatusCode: not System.Net.HttpStatusCode.TooManyRequests })
-                { result = new(null, ex.Message); }
+                {
+                    result = new(null, ex.Message);
+                }
                 results[key] = result;
             }
             var item = result?.Item;
@@ -60,12 +67,18 @@ public sealed class BundleComponentsWorker(IServiceScopeFactory scopes, IOptions
                 && await scope.ServiceProvider.GetRequiredService<IItemRepository>().IsOfficialBundleComponentAsync(key, ct);
             if (result?.Error is null && item is not null && (official || referencedComponent)
                 && (key.Type != CatalogItemType.Bundle || item.BundleComponentAssetIds is not null))
-            { valid.Add(key); continue; }
+            {
+                valid.Add(key);
+                continue;
+            }
             await scope.ServiceProvider.GetRequiredService<ICatalogImportFailureStore>().RecordFailureAsync(key,
                 result?.Error ?? "No se pudieron confirmar los componentes o el creador oficial.", DateTime.UtcNow, ct);
         }
         await CatalogSearchPageProcessor.ProcessAsync(scopes, new RobloxCatalogDiscoveryPage([], null)
-            { Items = valid, Details = results }, false, settings.Value, ct, fetchFallback: false);
+        {
+            Items = valid,
+            Details = results
+        }, false, settings.Value, ct, fetchFallback: false);
         await repository.SynchronizeRelationsAsync(ct);
         logger.LogInformation("Relaciones de paquetes actualizadas. Consultados: {Total}, Confirmados: {Valid}", keys.Count, valid.Count);
     }

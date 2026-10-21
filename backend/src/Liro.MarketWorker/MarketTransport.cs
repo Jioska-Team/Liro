@@ -19,6 +19,7 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
     ILogger<MarketTransport>? logger = null)
 {
     private readonly ConcurrentDictionary<string, RedisRobloxRequestBudget> budgets = new();
+    private readonly ConcurrentDictionary<string, MarketDirectBudget> directBudgets = new();
     private readonly MarketDispatchGate dispatch = new();
     private const string CooldownKey = "liro:{market}:cooldown";
 
@@ -50,22 +51,28 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         var id = Guid.NewGuid().ToString("N");
         var acquiredRoute = false;
         var acquiredGlobal = false;
+        CancellationTokenSource? admission = null;
         try
         {
             using var response = await dispatch.RunAsync(TimeSpan.FromSeconds(60d / settings.Value.RequestsPerMinute), async () =>
             {
                 var proxyCooldown = await ProxyCooldownAsync(proxy);
-                if (proxyCooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProxyHTTP402", proxyCooldown, true);
+                if (proxyCooldown > TimeSpan.Zero)
+                    throw new MarketHttpException("EsperaProxyHTTP402", proxyCooldown, true);
                 var cooldown = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey);
-                if (cooldown > TimeSpan.Zero) throw new MarketHttpException("EsperaProveedor", cooldown.Value, true);
+                if (cooldown > TimeSpan.Zero)
+                    throw new MarketHttpException("EsperaProveedor", cooldown.Value, true);
                 var wait = await route.TryAcquireAsync(id, ct);
-                if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoConexion", wait);
+                if (wait > TimeSpan.Zero)
+                    throw new MarketHttpException("CupoConexion", wait);
                 acquiredRoute = true;
                 wait = await global.TryAcquireAsync(id, ct);
-                if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait);
+                if (wait > TimeSpan.Zero)
+                    throw new MarketHttpException("CupoMercado", wait);
                 acquiredGlobal = true;
+                admission = await RobloxRequestAdmission.CreateAsync(ct, (route, id), (global, id));
                 logger?.LogInformation("Solicitud de mercado: ruta {Route}; artículo {Item}; presupuesto {Budget} por minuto.", hash[..12], collectibleId, settings.Value.RequestsPerMinute);
-                return SendProxyAsync(http, proxy, collectibleId, ct);
+                return SendProxyAsync(http, proxy, collectibleId, admission.Token, ct);
             }, ct);
             if (response.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.Forbidden)
             {
@@ -79,24 +86,28 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                     """, [CooldownKey], [(long)Math.Ceiling(delay.TotalMilliseconds)]);
                 throw new MarketHttpException("HTTP" + (int)response.StatusCode, delay, response.StatusCode == HttpStatusCode.TooManyRequests);
             }
-            if (!response.IsSuccessStatusCode) throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
+            if (!response.IsSuccessStatusCode)
+                throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
             return ResaleObservation.Parse(await response.Content.ReadAsStringAsync(ct), DateTime.UtcNow);
         }
         finally
         {
+            admission?.Dispose();
             // Keep ambiguous failures conservative. Redis failure stops further sends.
             try
             {
-                if (acquiredGlobal) await global.CompleteAsync(id, CancellationToken.None);
+                if (acquiredGlobal)
+                    await global.CompleteAsync(id, CancellationToken.None);
             }
             finally
             {
-                if (acquiredRoute) await route.CompleteAsync(id, CancellationToken.None);
+                if (acquiredRoute)
+                    await route.CompleteAsync(id, CancellationToken.None);
             }
         }
     }
 
-    private async Task<HttpResponseMessage> SendProxyAsync(HttpClient http, MarketProxy proxy, Guid collectibleId, CancellationToken ct)
+    private async Task<HttpResponseMessage> SendProxyAsync(HttpClient http, MarketProxy proxy, Guid collectibleId, CancellationToken ct, CancellationToken callerToken)
     {
         try
         {
@@ -110,7 +121,7 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
             await PauseProxyAccountAsync(proxy, TimeSpan.FromMinutes(2));
             throw new MarketHttpException("ProxySinConexion", TimeSpan.FromMinutes(2), true);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
         {
             await PauseProxyAccountAsync(proxy, TimeSpan.FromMinutes(2));
             throw new MarketHttpException("ProxyTimeout", TimeSpan.FromMinutes(2), true);
@@ -119,13 +130,15 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
 
     public async Task<bool> ShouldUseDirectAsync(IReadOnlyList<MarketProxy> proxies)
     {
-        if (!settings.Value.DirectFallbackEnabled) return false;
+        if (!settings.Value.DirectFallbackEnabled)
+            return false;
         var unavailable = 0;
         foreach (var proxy in proxies)
         {
             var secrets = configuration.GetSection("MarketProxySecrets:" + proxy.SecretReference);
             if (string.IsNullOrWhiteSpace(secrets["Username"]) || string.IsNullOrWhiteSpace(secrets["Password"])
-                || await ProxyCooldownAsync(proxy) > TimeSpan.Zero) unavailable++;
+                || await ProxyCooldownAsync(proxy) > TimeSpan.Zero)
+                unavailable++;
         }
         var paused = await redis.GetDatabase().KeyTimeToLiveAsync(CooldownKey) > TimeSpan.Zero;
         return MarketFallbackPolicy.UseDirect(settings.Value.DirectFallbackEnabled, proxies.Count, unavailable, paused);
@@ -140,7 +153,10 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         // Fail closed on an unsupported budget configuration instead of silently creating another pool.
         if (requestSettings.BudgetCapacity is < 7 or > 18 || requestSettings.BudgetWindow != TimeSpan.FromMinutes(1))
             throw new MarketHttpException("PresupuestoDirectoInvalido", TimeSpan.FromMinutes(1), true);
-        var direct = new MarketDirectBudget(redis, requestSettings, settings.Value.DirectRequestsPerMinute);
+        var directKey = requestSettings.BudgetKey + ":" + requestSettings.BudgetCapacity + ":"
+            + requestSettings.MinimumInterval.Ticks + ":" + settings.Value.DirectRequestsPerMinute;
+        var direct = directBudgets.GetOrAdd(directKey,
+            _ => new MarketDirectBudget(redis, requestSettings, settings.Value.DirectRequestsPerMinute));
         var global = Budget("liro:{market}:global", settings.Value.RequestsPerMinute, TimeSpan.Zero);
         var id = Guid.NewGuid().ToString("N");
         var acquired = false;
@@ -148,17 +164,24 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         try
         {
             var wait = await direct.TryAcquireAsync(id, ct);
-            if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoDirectoPrioridadCatalogo", wait, true);
+            if (wait > TimeSpan.Zero)
+                throw new MarketHttpException("CupoDirectoPrioridadCatalogo", wait, true);
             acquired = true;
             wait = await global.TryAcquireAsync(id, ct);
-            if (wait > TimeSpan.Zero) throw new MarketHttpException("CupoMercado", wait, true);
+            if (wait > TimeSpan.Zero)
+                throw new MarketHttpException("CupoMercado", wait, true);
             marketAcquired = true;
             // Never let proxy settings or environment variables redirect the direct fallback.
             using var http = new HttpClient(new HttpClientHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false })
-                { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 8 * 1024 * 1024 };
+            {
+                Timeout = TimeSpan.FromSeconds(30),
+                MaxResponseContentBufferSize = 8 * 1024 * 1024
+            };
             ct.ThrowIfCancellationRequested();
+            using var admission = await RobloxRequestAdmission.CreateAsync(ct, (direct, id), (global, id));
             logger?.LogInformation("Solicitud de mercado: ruta DIRECTA_RESPALDO; artículo {Item}; presupuesto {Budget} por minuto.", collectibleId, settings.Value.DirectRequestsPerMinute);
-            using var response = await http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", ct);
+            using var response = await http.GetAsync($"https://apis.roblox.com/marketplace-sales/v1/item/{collectibleId:D}/resale-data", admission.Token);
+            await RobloxRateLimitResponse.PublishAsync(response, direct, TimeSpan.FromMinutes(1), DateTimeOffset.UtcNow, CancellationToken.None);
             if (response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests)
             {
                 var delay = RetryDelay(response, DateTimeOffset.UtcNow);
@@ -169,12 +192,17 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                     """, [CooldownKey], [(long)Math.Ceiling(delay.TotalMilliseconds)]);
                 throw new MarketHttpException("HTTP" + (int)response.StatusCode, delay, true);
             }
-            if (!response.IsSuccessStatusCode) throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
+            if (!response.IsSuccessStatusCode)
+                throw new MarketHttpException("HTTP" + (int)response.StatusCode, TimeSpan.FromMinutes(1));
             return ResaleObservation.Parse(await response.Content.ReadAsStringAsync(ct), DateTime.UtcNow);
         }
         finally
         {
-            try { if (marketAcquired) await global.CompleteAsync(id, CancellationToken.None); }
+            try
+            {
+                if (marketAcquired)
+                    await global.CompleteAsync(id, CancellationToken.None);
+            }
             finally { if (acquired) await direct.CompleteAsync(id, CancellationToken.None); }
         }
     }
@@ -207,9 +235,12 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         // Configuration reloads must not clear Redis accounting.
         var cacheKey = key + ":" + capacity + ":" + spacing.Ticks;
         return budgets.GetOrAdd(cacheKey, _ => new(redis, Options.Create(new RobloxRequestOptions
-            {
-                BudgetKey = key, BudgetCapacity = capacity, BudgetWindow = TimeSpan.FromMinutes(1), MinimumInterval = spacing
-            })));
+        {
+            BudgetKey = key,
+            BudgetCapacity = capacity,
+            BudgetWindow = TimeSpan.FromMinutes(1),
+            MinimumInterval = spacing
+        })));
     }
 }
 

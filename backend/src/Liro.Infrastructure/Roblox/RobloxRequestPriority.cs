@@ -21,10 +21,15 @@ public sealed class RobloxRequestPriority : IDisposable
     {
         private readonly bool previous = mainScan.Value;
         private bool disposed;
-        public MainScanScope() { mainScan.Value = true; Interlocked.Increment(ref activeScans); }
+        public MainScanScope()
+        {
+            mainScan.Value = true;
+            Interlocked.Increment(ref activeScans);
+        }
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
             mainScan.Value = previous;
             Interlocked.Decrement(ref activeScans);
@@ -71,7 +76,11 @@ internal sealed class RobloxRequestTurnstile : IDisposable
         lock (sync)
         {
             ObjectDisposedException.ThrowIf(disposed, this);
-            if (!held) { held = true; return; }
+            if (!held)
+            {
+                held = true;
+                return;
+            }
             waiter = new(TaskCreationOptions.RunContinuationsAsynchronously);
             (RobloxRequestPriority.IsBackground ? background : RobloxRequestPriority.IsMainScan ? main : RobloxRequestPriority.IsUrgent ? urgent : ordinary).Enqueue(waiter);
         }
@@ -83,7 +92,8 @@ internal sealed class RobloxRequestTurnstile : IDisposable
     {
         lock (sync)
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             while (main.Count + urgent.Count + ordinary.Count + background.Count > 0)
             {
                 // During a scan, images wait longer, but never indefinitely (one in 25 grants).
@@ -93,10 +103,13 @@ internal sealed class RobloxRequestTurnstile : IDisposable
                 var high = main.Count + urgent.Count > 0 && (urgentStreak < 3 || ordinary.Count == 0);
                 // Two main-search turns per known/priority turn while both have pending work.
                 var primary = main.Count > 0 && (mainStreak < 2 || urgent.Count == 0);
-                if (!(low ? background : high ? primary ? main : urgent : ordinary).Dequeue().TrySetResult()) continue;
+                if (!(low ? background : high ? primary ? main : urgent : ordinary).Dequeue().TrySetResult())
+                    continue;
                 foregroundStreak = low ? 0 : Math.Min(24, foregroundStreak + 1);
-                if (!low) urgentStreak = high ? Math.Min(3, urgentStreak + 1) : 0;
-                if (!low && high) mainStreak = primary ? Math.Min(2, mainStreak + 1) : 0;
+                if (!low)
+                    urgentStreak = high ? Math.Min(3, urgentStreak + 1) : 0;
+                if (!low && high)
+                    mainStreak = primary ? Math.Min(2, mainStreak + 1) : 0;
                 return;
             }
             held = false;
@@ -108,19 +121,28 @@ internal sealed class RobloxRequestTurnstile : IDisposable
 
     public void ReleaseAfter(TimeSpan delay, TimeProvider clock)
     {
-        if (delay <= TimeSpan.Zero) { Release(); return; }
+        if (delay <= TimeSpan.Zero)
+        {
+            Release();
+            return;
+        }
         // Keep the slot closed while the caller processes its response and queues its next page.
         // Selection happens only when the shared spacing has elapsed.
         lock (sync)
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             _ = ReleaseLaterAsync(delay, clock, shutdown.Token);
         }
     }
 
     private async Task ReleaseLaterAsync(TimeSpan delay, TimeProvider clock, CancellationToken token)
     {
-        try { await Task.Delay(delay, clock, token); Release(); }
+        try
+        {
+            await Task.Delay(delay, clock, token);
+            Release();
+        }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
     }
 
@@ -128,10 +150,12 @@ internal sealed class RobloxRequestTurnstile : IDisposable
     {
         lock (sync)
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
             shutdown.Cancel();
-            foreach (var waiter in main.Concat(urgent).Concat(ordinary).Concat(background)) waiter.TrySetException(new ObjectDisposedException(nameof(RobloxRequestTurnstile)));
+            foreach (var waiter in main.Concat(urgent).Concat(ordinary).Concat(background))
+                waiter.TrySetException(new ObjectDisposedException(nameof(RobloxRequestTurnstile)));
             main.Clear();
             urgent.Clear();
             ordinary.Clear();

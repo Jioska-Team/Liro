@@ -12,7 +12,10 @@ public sealed class LiroReadinessProbe(HttpClient client) : IReadinessProbe
         try
         {
             using var response = await client.GetAsync(new Uri(endpoint.ApiBaseUri, "/api/lan/ready"), deadline.Token);
-            if (response.StatusCode != System.Net.HttpStatusCode.OK) { return false; }
+            if (response.StatusCode != System.Net.HttpStatusCode.OK)
+            {
+                return false;
+            }
             var content = await response.Content.ReadFromJsonAsync<ReadinessResponse>(deadline.Token);
             var ready = content?.Service == "liro-api" && content.Status == "ready";
             return ready;

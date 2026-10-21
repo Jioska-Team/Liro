@@ -21,11 +21,20 @@ public sealed class PrivateReplyRegistry(TimeProvider clock)
         {
             if (!current.TryGetValue(userId, out previous))
             {
-                if (current.TryAdd(userId, lease)) { break; }
+                if (current.TryAdd(userId, lease))
+                {
+                    break;
+                }
             }
-            else if (current.TryUpdate(userId, lease, previous)) { break; }
+            else if (current.TryUpdate(userId, lease, previous))
+            {
+                break;
+            }
         } while (true);
-        if (previous is not null) { await DeleteSafelyAsync(previous); }
+        if (previous is not null)
+        {
+            await DeleteSafelyAsync(previous);
+        }
         return lease;
     }
 
@@ -33,7 +42,10 @@ public sealed class PrivateReplyRegistry(TimeProvider clock)
 
     public async Task ExpireAsync(Lease lease, TimeSpan delay, CancellationToken cancellationToken)
     {
-        try { await Task.Delay(delay, clock, cancellationToken); }
+        try
+        {
+            await Task.Delay(delay, clock, cancellationToken);
+        }
         catch (OperationCanceledException) { return; }
         current.TryRemove(new KeyValuePair<ulong, Lease>(lease.UserId, lease));
         // Also retry deletion of replaced replies if the earlier HTTP deletion failed.
@@ -44,13 +56,19 @@ public sealed class PrivateReplyRegistry(TimeProvider clock)
     {
         foreach (var entry in current.ToArray())
         {
-            if (current.TryRemove(entry)) { await DeleteSafelyAsync(entry.Value); }
+            if (current.TryRemove(entry))
+            {
+                await DeleteSafelyAsync(entry.Value);
+            }
         }
     }
 
     private static async Task DeleteSafelyAsync(Lease lease)
     {
-        try { await lease.Delete(); }
+        try
+        {
+            await lease.Delete();
+        }
         catch (Exception) { /* Expired/deleted responses or Discord outage must not block lifecycle operations. */ }
     }
 }

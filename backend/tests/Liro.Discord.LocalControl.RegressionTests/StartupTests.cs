@@ -105,7 +105,12 @@ internal static class StartupTests
             var first = coordinator.EnsureReadyAsync(cancellation.Token);
             var second = coordinator.EnsureReadyAsync(default);
             cancellation.Cancel();
-            try { await first; throw new Exception("Caller was not canceled"); } catch (OperationCanceledException) { }
+            try
+            {
+                await first;
+                throw new Exception("Caller was not canceled");
+            }
+            catch (OperationCanceledException) { }
             fake.Release.TrySetResult();
             var result = await second;
             Assert(result.Status == StartupStatus.Ready && fake.Starts == 1 && fake.DockerStarts == 1);
@@ -169,13 +174,21 @@ internal static class StartupTests
         return coordinator;
     }
 
-    private static void Assert(bool condition) { if (!condition) { throw new Exception("Startup invariant failed"); } }
+    private static void Assert(bool condition)
+    {
+        if (!condition)
+        {
+            throw new Exception("Startup invariant failed");
+        }
+    }
     private sealed class Lifetime : IHostApplicationLifetime
     {
         public CancellationToken ApplicationStarted => default;
         public CancellationToken ApplicationStopping => default;
         public CancellationToken ApplicationStopped => default;
-        public void StopApplication() { }
+        public void StopApplication()
+        {
+        }
     }
 
     private sealed class RuntimeFake : ILocalRuntime, ILanNetworkResolver, IReadinessProbe
@@ -193,22 +206,45 @@ internal static class StartupTests
             var address = ChangeNetwork && Resolves > 1 ? "192.168.50.11" : "192.168.50.10";
             return Task.FromResult(new LanEndpoint(new Uri($"http://{address}:5205/"), address, 24, 1));
         }
-        public Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken token) { Probes++; return Task.FromResult(Ready || Probes >= ReadyAfterProbes); }
+        public Task<bool> IsReadyAsync(LanEndpoint endpoint, CancellationToken token)
+        {
+            Probes++;
+            return Task.FromResult(Ready || Probes >= ReadyAfterProbes);
+        }
         public Task<bool> IsDockerReadyAsync(CancellationToken token) => Task.FromResult(DockerReady || ++DockerChecks >= DockerReadyAfterChecks);
         public Task<bool> IsDockerDesktopRunningAsync(CancellationToken token) => Task.FromResult(DesktopOpen || DockerReady);
-        public Task StartDockerDesktopAsync(CancellationToken token) { DockerStarts++; DockerReady = true; Order.Add("docker"); return Task.CompletedTask; }
+        public Task StartDockerDesktopAsync(CancellationToken token)
+        {
+            DockerStarts++;
+            DockerReady = true;
+            Order.Add("docker");
+            return Task.CompletedTask;
+        }
         public Task<AppHostState> GetAppHostStateAsync(CancellationToken token) => Task.FromResult(State);
         public Task StopAppHostAsync(CancellationToken token)
         {
-            Stops++; Order.Add("stop");
-            if (FailStop) { throw new InvalidOperationException("Stop failed"); }
-            if (!RemainRunningAfterStop) { State = AppHostState.Stopped; Ready = false; }
+            Stops++;
+            Order.Add("stop");
+            if (FailStop)
+            {
+                throw new InvalidOperationException("Stop failed");
+            }
+            if (!RemainRunningAfterStop)
+            {
+                State = AppHostState.Stopped;
+                Ready = false;
+            }
             return Task.CompletedTask;
         }
         public async Task StartAppHostAsync(LanEndpoint endpoint, CancellationToken token)
         {
-            Starts++; State = AppHostState.Starting; Order.Add("backend");
-            if (BlockStartup) { await Release.Task.WaitAsync(token); }
+            Starts++;
+            State = AppHostState.Starting;
+            Order.Add("backend");
+            if (BlockStartup)
+            {
+                await Release.Task.WaitAsync(token);
+            }
             Ready = true;
         }
     }

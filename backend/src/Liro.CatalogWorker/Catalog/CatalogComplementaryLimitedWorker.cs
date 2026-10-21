@@ -14,21 +14,43 @@ public sealed class CatalogComplementaryLimitedWorker(IServiceScopeFactory scope
     public static IReadOnlyList<CatalogSearchPartition> Partitions()
     {
         var roots = new List<CatalogSearchPartition>();
-        foreach (var sort in new[] { 0, 1, 2, 4, 5 }) roots.Add(new(CatalogSearchScope.Collectibles) { SortType = sort });
+        foreach (var sort in new[] { 0, 1, 2, 4, 5 })
+            roots.Add(new(CatalogSearchScope.Collectibles)
+            {
+                SortType = sort
+            });
         foreach (var type in new[] { 8, 19, 41, 42, 43, 44, 45, 46, 47, 67, 72 })
-            roots.Add(new(CatalogSearchScope.Collectibles) { AssetTypeId = type, SortType = 3 });
-        foreach (var type in new[] { 3, 4 }) roots.Add(new(CatalogSearchScope.Collectibles) { BundleTypeId = type, SortType = 3 });
+            roots.Add(new(CatalogSearchScope.Collectibles)
+            {
+                AssetTypeId = type,
+                SortType = 3
+            });
+        foreach (var type in new[] { 3, 4 })
+            roots.Add(new(CatalogSearchScope.Collectibles)
+            {
+                BundleTypeId = type,
+                SortType = 3
+            });
         // Hats alone saturate; complementary orders retain off-sale candidates without price bounds.
-        foreach (var sort in new[] { 0, 1, 2, 4, 5 }) roots.Add(new(CatalogSearchScope.Collectibles) { AssetTypeId = 8, SortType = sort });
+        foreach (var sort in new[] { 0, 1, 2, 4, 5 })
+            roots.Add(new(CatalogSearchScope.Collectibles)
+            {
+                AssetTypeId = 8,
+                SortType = sort
+            });
         return roots;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        if (!settings.Value.ComplementaryLimitedSearchEnabled) return;
+        if (!settings.Value.ComplementaryLimitedSearchEnabled)
+            return;
         while (!ct.IsCancellationRequested)
         {
-            try { await RunPassAsync(ct); }
+            try
+            {
+                await RunPassAsync(ct);
+            }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch (RobloxRateLimitedException ex) { await CatalogWorkerDelay.WaitForRateLimitAsync(ex, settings.Value.RetryDelay, logger, ct); continue; }
             catch (Exception ex) { logger.LogWarning(ex, "Complementary limited pass failed; independent cursors retained."); }
@@ -50,11 +72,16 @@ public sealed class CatalogComplementaryLimitedWorker(IServiceScopeFactory scope
             var store = scope.ServiceProvider.GetRequiredService<ICatalogCheckpointStore>();
             var key = catalog.Value.ScopeKey + ":limited-complement:v1:" + partition.Key;
             var checkpoint = await store.LoadAsync(key, ct);
-            if (!seen.TryGetValue(key, out var cursors)) seen[key] = cursors = new();
+            if (!seen.TryGetValue(key, out var cursors))
+                seen[key] = cursors = new();
             var cursor = checkpoint.Cursor;
-            if (cursor is not null && !cursors.Add(cursor)) throw new InvalidOperationException("Complementary search returned a cyclic cursor.");
+            if (cursor is not null && !cursors.Add(cursor))
+                throw new InvalidOperationException("Complementary search returned a cyclic cursor.");
             RobloxCatalogDiscoveryPage page;
-            try { page = await CatalogWorkerDelay.ReadPendingPageAsync(token => scope.ServiceProvider.GetRequiredService<IRobloxCatalogDiscoveryClient>().GetPartitionPageAsync(partition, cursor, token), logger, ct); }
+            try
+            {
+                page = await CatalogWorkerDelay.ReadPendingPageAsync(token => scope.ServiceProvider.GetRequiredService<IRobloxCatalogDiscoveryClient>().GetPartitionPageAsync(partition, cursor, token), logger, ct);
+            }
             catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest && cursor is not null)
             {
                 await store.SaveAsync(key, new(null, false), ct);
@@ -74,7 +101,8 @@ public sealed class CatalogComplementaryLimitedWorker(IServiceScopeFactory scope
                 CoverageStatus = next is null ? "SearchExhausted" : "Running"
             }, ct);
             pages++;
-            if (next is not null) pending.Enqueue(partition);
+            if (next is not null)
+                pending.Enqueue(partition);
         }
         logger.LogInformation("Complementary limited pass completed. Partitions: {Partitions}, Pages: {Pages}, ElapsedSeconds: {Seconds}",
             Partitions().Count, pages, System.Diagnostics.Stopwatch.GetElapsedTime(began).TotalSeconds);

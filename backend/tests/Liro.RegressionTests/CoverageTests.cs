@@ -24,7 +24,10 @@ internal static class CoverageTests
             Check.That(new[] { 1, 2, 5, 7 }.All(c => roots.Any(x => x.CategoryFilter == c)), "Category missing");
             Check.That(roots.Any(x => x.Scope == CatalogSearchScope.Premium) && roots.Any(x => x.Scope == CatalogSearchScope.TimedOptions), "Sales filter missing");
             Check.That(new[] { 2, 4, 5 }.All(s => roots.Any(x => x.SortType == s && x.MinPrice is null && x.MaxPrice is null)), "Unpriced complementary traversal missing");
-            var expanded = CatalogCoveragePlanner.Expand(new(CatalogSearchScope.All) { AssetTypeId = 8 }, options);
+            var expanded = CatalogCoveragePlanner.Expand(new(CatalogSearchScope.All)
+            {
+                AssetTypeId = 8
+            }, options);
             Check.That(new[] { 1, 2, 3, 4, 5 }.All(s => expanded.Any(x => x.SortType == s && x.AssetTypeId == 8 && x.MinPrice is null)), "Truncated category lacks complementary sort");
             foreach (var partition in roots)
             {
@@ -32,9 +35,16 @@ internal static class CoverageTests
                 {
                     var query = request.RequestUri!.Query;
                     Check.That(query.Contains("IncludeNotForSale=true") && query.Contains("CreatorTargetId=1") && query.Contains("SalesTypeFilter=" + (int)partition.Scope) && query.Contains("SortType=" + partition.SortType) && query.Contains("sortOrder=Desc") && query.Contains("Cursor=next%26page"), "Required request filter or cursor lost");
-                    if (partition.CategoryFilter is { } c) Check.That(query.Contains("CategoryFilter=" + c), "Category filter not sent");
-                    return new(HttpStatusCode.OK) { Content = new StringContent("""{"data":[],"nextPageCursor":null}""") };
-                })) { BaseAddress = new("https://catalog.roblox.com/") };
+                    if (partition.CategoryFilter is { } c)
+                        Check.That(query.Contains("CategoryFilter=" + c), "Category filter not sent");
+                    return new(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("""{"data":[],"nextPageCursor":null}""")
+                    };
+                }))
+                {
+                    BaseAddress = new("https://catalog.roblox.com/")
+                };
                 await new RobloxCatalogDiscoveryClient(http, Options.Create(options)).GetPartitionPageAsync(partition, "next&page", default);
             }
         });
@@ -43,9 +53,19 @@ internal static class CoverageTests
             var asset = new CatalogSearchPartition(CatalogSearchScope.All) { AssetTypeId = 8 };
             Check.That(asset.Key == "All:a8:b:p-:s0:knone", "Existing asset progress invalidated");
             Check.That(new CatalogSearchPartition(CatalogSearchScope.All) { BundleTypeId = 1 }.Key.EndsWith(":components-v1"), "Completed bundles will not be revisited");
-            Check.That((asset with { CategoryFilter = 2 }).Key != asset.Key, "Category checkpoint reused another cursor");
+            Check.That((asset with
+            {
+                CategoryFilter = 2
+            }).Key != asset.Key, "Category checkpoint reused another cursor");
             var rejected = false;
-            try { (asset with { CategoryFilter = 8 }).Validate(); } catch (ArgumentException) { rejected = true; }
+            try
+            {
+                (asset with
+                {
+                    CategoryFilter = 8
+                }).Validate();
+            }
+            catch (ArgumentException) { rejected = true; }
             Check.That(rejected, "Unsupported category accepted");
         });
         suite.AsyncTest("Saturated All subdivisions run before unrelated collectible categories", async () =>
@@ -54,9 +74,16 @@ internal static class CoverageTests
             config.SearchScopes = [CatalogSearchScope.All, CatalogSearchScope.Collectibles];
             config.CoverageAssetTypeIds = [8];
             var store = new Checkpoints();
-            store.States[Key(config, new(CatalogSearchScope.All))] = new(null, true) { CoverageStatus = "SearchExhausted" };
+            store.States[Key(config, new(CatalogSearchScope.All))] = new(null, true)
+            {
+                CoverageStatus = "SearchExhausted"
+            };
             var hat = new CatalogSearchPartition(CatalogSearchScope.All) { AssetTypeId = 8 };
-            store.States[Key(config, hat)] = new(null, true) { ItemsSeen = 1000, CoverageStatus = "PossiblyTruncated" };
+            store.States[Key(config, hat)] = new(null, true)
+            {
+                ItemsSeen = 1000,
+                CoverageStatus = "PossiblyTruncated"
+            };
             var visited = new List<CatalogSearchPartition>();
             var discovery = new Discovery((partition, cursor) => { visited.Add(partition); return new([], null); });
             await RunAsync(config, store, discovery);

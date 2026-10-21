@@ -11,7 +11,10 @@ public sealed class CatalogoGeneral
     public string Valor { get; set; } = "";
     public string TipoDato { get; set; } = "Texto";
     public string Descripcion { get; set; } = "";
-    public bool Activo { get; set; }
+    public bool Activo
+    {
+        get; set;
+    }
     public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
     public DateTime FechaModificacion { get; set; } = DateTime.UtcNow;
     public string CreadoPor { get; set; } = "sistema";
@@ -33,41 +36,104 @@ public sealed class CatalogoGeneral
             "Json" => IsJson(Valor),
             _ => false
         };
-        if (!valid) throw new ArgumentException("El valor no coincide con TipoDato.");
+        if (!valid)
+            throw new ArgumentException("El valor no coincide con TipoDato.");
     }
-    private static bool IsJson(string value) { try { using var document = JsonDocument.Parse(value); return true; } catch (JsonException) { return false; } }
+    private static bool IsJson(string value)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException) { return false; }
+    }
 }
 
 // RAP has a separate observation timestamp from existing catalog prices.
 public sealed class MarketWatch
 {
-    public Guid ItemId { get; set; }
-    public DateTime NextCheckAtUtc { get; set; }
-    public DateTime? LastAttemptAtUtc { get; set; }
-    public DateTime? LastSuccessAtUtc { get; set; }
-    public Guid? LeaseId { get; set; }
-    public DateTime? LeaseUntilUtc { get; set; }
-    public int ConsecutiveFailures { get; set; }
-    public string? LastErrorCode { get; set; }
-    public decimal? RecentAveragePrice { get; set; }
-    public DateTime? RapObservedAtUtc { get; set; }
-    public decimal? DailySales { get; set; }
+    public Guid ItemId
+    {
+        get; set;
+    }
+    public DateTime NextCheckAtUtc
+    {
+        get; set;
+    }
+    public DateTime? LastAttemptAtUtc
+    {
+        get; set;
+    }
+    public DateTime? LastSuccessAtUtc
+    {
+        get; set;
+    }
+    public Guid? LeaseId
+    {
+        get; set;
+    }
+    public DateTime? LeaseUntilUtc
+    {
+        get; set;
+    }
+    public int ConsecutiveFailures
+    {
+        get; set;
+    }
+    public string? LastErrorCode
+    {
+        get; set;
+    }
+    public decimal? RecentAveragePrice
+    {
+        get; set;
+    }
+    public DateTime? RapObservedAtUtc
+    {
+        get; set;
+    }
+    public decimal? DailySales
+    {
+        get; set;
+    }
     public string Activity { get; set; } = "SinDatos";
 }
 
 public sealed class MarketHistoryPoint
 {
-    public Guid ItemId { get; set; }
+    public Guid ItemId
+    {
+        get; set;
+    }
     public string Source { get; set; } = "marketplace-sales";
     public string Metric { get; set; } = "";
-    public DateTime PeriodUtc { get; set; }
-    public decimal Value { get; set; }
-    public DateTime ObservedAtUtc { get; set; }
+    public DateTime PeriodUtc
+    {
+        get; set;
+    }
+    public decimal Value
+    {
+        get; set;
+    }
+    public DateTime ObservedAtUtc
+    {
+        get; set;
+    }
 }
 
 public sealed class MarketRapSnapshot
 {
-    public Guid ItemId { get; set; }
-    public DateTime ObservedAtUtc { get; set; }
-    public decimal Value { get; set; }
+    public Guid ItemId
+    {
+        get; set;
+    }
+    public DateTime ObservedAtUtc
+    {
+        get; set;
+    }
+    public decimal Value
+    {
+        get; set;
+    }
 }

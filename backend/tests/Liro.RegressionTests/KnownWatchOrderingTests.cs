@@ -9,8 +9,7 @@ internal static class KnownWatchOrderingTests
 {
     public static void Register(RegressionSuite suite)
     {
-        var connection = Environment.GetEnvironmentVariable("LIRO_TEST_POSTGRES");
-        if (string.IsNullOrEmpty(connection)) return;
+        var connection = IntegrationPrerequisites.RequireConnection("LIRO_TEST_POSTGRES");
         suite.AsyncTest("La vuelta prioriza pendientes antiguos y guarda fechas individuales en PostgreSQL", async () =>
         {
             await using var db = new LiroDbContext(new DbContextOptionsBuilder<LiroDbContext>().UseNpgsql(connection).Options);

@@ -33,6 +33,8 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
         try
         {
             var now = clock.GetUtcNow();
+            if (budget is not null && await budget.GetCooldownAsync(cancellationToken) is var sharedPause && sharedPause > TimeSpan.Zero)
+                throw new RobloxRateLimitedException(now.Add(sharedPause));
             if (now < retryAt)
             {
                 throw new RobloxRateLimitedException(retryAt);
@@ -65,7 +67,8 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
                 while (true)
                 {
                     var wait = await budget.TryAcquireAsync(reservationId, cancellationToken);
-                    if (wait <= TimeSpan.Zero) break;
+                    if (wait <= TimeSpan.Zero)
+                        break;
                     logger.LogInformation("Presupuesto global de Roblox: próxima oportunidad en {DelaySeconds} segundos; se conserva el turno pendiente.", wait.TotalSeconds);
                     await Task.Delay(wait, clock, cancellationToken);
                 }
@@ -73,14 +76,36 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                response = await send(cancellationToken);
+                var reservations = new List<(IRobloxRequestBudget Budget, string Id)>();
+                if (budget is not null)
+                    reservations.Add((budget, reservationId));
+                if (searchReservation is not null)
+                    reservations.Add((searchBudget!.Budget, searchReservation));
+                using var admission = await RobloxRequestAdmission.CreateAsync(cancellationToken, reservations.ToArray());
+                response = await send(admission.Token);
+                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    consecutiveLimits = Math.Min(consecutiveLimits + 1, 16);
+                    var fallback = TimeSpan.FromTicks((long)Math.Min(options.Value.MaximumFallbackCooldown.Ticks,
+                        options.Value.DefaultCooldown.Ticks * Math.Pow(2, consecutiveLimits - 1)));
+                    var observed = clock.GetUtcNow();
+                    // Keep the local safety pause even if publishing fails, and publish before releasing the reservation.
+                    var header = response.Headers.RetryAfter;
+                    var requested = header?.Delta ?? (header?.Date - observed);
+                    retryAt = observed.Add(requested is { } value && value > TimeSpan.Zero ? value : fallback);
+                    await RobloxRateLimitResponse.PublishAsync(response, budget, fallback, observed, CancellationToken.None);
+                }
             }
+            catch { response?.Dispose(); throw; }
             finally
             {
                 if (budget is not null)
                 {
                     // Close even on cancellation/error; keep capacity through 60 seconds after completion.
-                    try { await budget.CompleteAsync(reservationId, CancellationToken.None); }
+                    try
+                    {
+                        await budget.CompleteAsync(reservationId, CancellationToken.None);
+                    }
                     catch { response?.Dispose(); throw; }
                 }
             }
@@ -91,20 +116,8 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
                 Header(response, "x-ratelimit-remaining"), Header(response, "x-ratelimit-reset"));
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                consecutiveLimits = Math.Min(consecutiveLimits + 1, 16);
-                var fallback = TimeSpan.FromTicks((long)Math.Min(
-                    options.Value.MaximumFallbackCooldown.Ticks,
-                    options.Value.DefaultCooldown.Ticks * Math.Pow(2, consecutiveLimits - 1)));
-                var header = response.Headers.RetryAfter;
-                var delay = header?.Delta ?? (header?.Date - now);
-                if (delay is null || delay <= TimeSpan.Zero)
-                {
-                    delay = fallback;
-                }
-
-                retryAt = now.Add(delay.Value);
                 response.Dispose();
-                logger.LogWarning("Roblox returned 429. All Roblox clients in this process pause until {RetryAtUtc}.", retryAt);
+                logger.LogWarning("Roblox returned 429. Shared direct-IP traffic pauses until at least {RetryAtUtc}.", retryAt);
                 throw new RobloxRateLimitedException(retryAt);
             }
 
@@ -125,7 +138,8 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
             catch { response?.Dispose(); throw; }
             finally
             {
-                if (deferredSearch) mutex.Release(); // No HTTP attempt; the previous spacing already elapsed.
+                if (deferredSearch)
+                    mutex.Release(); // No HTTP attempt; the previous spacing already elapsed.
                 else
                 {
                     nextRequestAt = clock.GetUtcNow().Add(options.Value.MinimumInterval);
@@ -137,7 +151,8 @@ public sealed class RobloxRequestGate(IOptions<RobloxRequestOptions> options, Ti
 
     private static string Header(HttpResponseMessage response, string name)
     {
-        if (!response.Headers.TryGetValues(name, out var values)) return "no informado";
+        if (!response.Headers.TryGetValues(name, out var values))
+            return "no informado";
         var text = string.Join(",", values);
         return new string(text.Take(128).Where(c => !char.IsControl(c)).ToArray());
     }

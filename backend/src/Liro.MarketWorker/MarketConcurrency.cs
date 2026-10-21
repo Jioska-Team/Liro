@@ -17,12 +17,17 @@ public sealed class MarketLanePool(int capacity)
                 active[key].GetAwaiter().GetResult();
                 active.Remove(key);
             }
-            if (active.ContainsKey(route) || active.Count >= capacity) return false;
+            if (active.ContainsKey(route) || active.Count >= capacity)
+                return false;
             active.Add(route, Task.Run(operation));
             return true;
         }
     }
-    public Task DrainAsync() { lock (sync) return Task.WhenAll(active.Values.ToArray()); }
+    public Task DrainAsync()
+    {
+        lock (sync)
+            return Task.WhenAll(active.Values.ToArray());
+    }
 }
 
 // Serialize starts, not responses. The Redis window remains the aggregate cap.
@@ -37,7 +42,8 @@ public sealed class MarketDispatchGate : IDisposable
         try
         {
             var delay = TimeSpan.FromSeconds((nextStart - Stopwatch.GetTimestamp()) / (double)Stopwatch.Frequency);
-            if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, ct);
             ct.ThrowIfCancellationRequested();
             pending = await start();
             nextStart = Stopwatch.GetTimestamp() + (long)Math.Ceiling(spacing.TotalSeconds * Stopwatch.Frequency);

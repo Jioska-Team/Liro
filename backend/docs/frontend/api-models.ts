@@ -78,5 +78,11 @@ export interface CreateItemRequest {
   marketStatus: ItemMarketStatus;
 }
 
+/** Contrato administrativo. Solo HTTPS; no enviar desde Angular/LAN. */
+export interface ImportCatalogItemRequest {
+  itemType: 'Asset' | 'Bundle';
+  robloxId: number;
+}
+
 
 

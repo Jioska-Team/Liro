@@ -141,7 +141,10 @@ public sealed class RobloxCatalogDiscoveryClient(HttpClient httpClient, IOptions
                 try
                 {
                     var raw = JsonSerializer.SerializeToElement(item);
-                    var mapped = RobloxCatalogClient.MapItem(raw, identity, observedAt) with { Source = "RobloxCatalogSearchV2" };
+                    var mapped = RobloxCatalogClient.MapItem(raw, identity, observedAt) with
+                    {
+                        Source = "RobloxCatalogSearchV2"
+                    };
                     if (mapped.Details?.CreatorId is null || mapped.Details.CreatorType is null
                         || mapped.Details.CreatedAtUtc is null
                         || (parsed == CatalogItemType.Asset ? mapped.Details.AssetTypeId : mapped.Details.BundleTypeId) is null)
@@ -158,10 +161,17 @@ public sealed class RobloxCatalogDiscoveryClient(HttpClient httpClient, IOptions
         }
         // Publish only fully validated observations after duplicate identities have been rejected.
         foreach (var observation in details.Values)
-            if (observation.Error is null && observation.Item is { } valid) session?.Store(valid);
+            if (observation.Error is null && observation.Item is { } valid)
+                session?.Store(valid);
         var unique = items.Distinct().ToArray();
-        var result = new RobloxCatalogDiscoveryPage(unique.Where(x => x.Type == CatalogItemType.Asset).Select(x => x.Id).ToArray(), page.NextPageCursor) { Items = unique, Details = details, LimitedItems = limited.Distinct().ToArray(), ReturnedCount = page.Data.Count,
-            BundledAssets = bundledAssets.Except(unique).ToArray() };
+        var result = new RobloxCatalogDiscoveryPage(unique.Where(x => x.Type == CatalogItemType.Asset).Select(x => x.Id).ToArray(), page.NextPageCursor)
+        {
+            Items = unique,
+            Details = details,
+            LimitedItems = limited.Distinct().ToArray(),
+            ReturnedCount = page.Data.Count,
+            BundledAssets = bundledAssets.Except(unique).ToArray()
+        };
         return result;
     }
     private sealed class SearchResponse
@@ -180,13 +190,25 @@ public sealed class RobloxCatalogDiscoveryClient(HttpClient httpClient, IOptions
     private sealed class SearchItem
     {
         [JsonExtensionData]
-        public Dictionary<string, JsonElement>? AdditionalFields { get; init; }
+        public Dictionary<string, JsonElement>? AdditionalFields
+        {
+            get; init;
+        }
         [JsonPropertyName("creatorTargetId")]
-        public long? CreatorTargetId { get; init; }
+        public long? CreatorTargetId
+        {
+            get; init;
+        }
         [JsonPropertyName("creatorType")]
-        public string? CreatorType { get; init; }
+        public string? CreatorType
+        {
+            get; init;
+        }
         [JsonPropertyName("itemRestrictions")]
-        public string[]? ItemRestrictions { get; init; }
+        public string[]? ItemRestrictions
+        {
+            get; init;
+        }
         [JsonPropertyName("assetType")]
         public int? AssetType
         {

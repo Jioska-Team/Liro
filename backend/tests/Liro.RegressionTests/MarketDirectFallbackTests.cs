@@ -20,15 +20,14 @@ internal static class MarketDirectFallbackTests
             Check.That(!MarketFallbackPolicy.UseDirect(true, 2, 2, true), "Evade pausa 403/429");
             Check.That(!MarketFallbackPolicy.UseDirect(false, 2, 2, false), "Ignora configuración");
         });
-        suite.Test("DirectFallback_ConfigurationCapsTwoAndPreservesCatalogHeadroom", () =>
+        suite.Test("DirectFallback_DefaultsToOnePerMinute", () =>
         {
             var options = new MarketOptions();
-            Check.That(options.DirectFallbackEnabled && options.DirectRequestsPerMinute == 2, "Respaldo no habilitado");
+            Check.That(options.DirectFallbackEnabled && options.DirectRequestsPerMinute == 1, "Respaldo no habilitado");
             options.DirectRequestsPerMinute = 3;
             Check.That(!options.IsValid(), "Permite aumentar respaldo sin revisión");
         });
-        var connection = Environment.GetEnvironmentVariable("LIRO_TEST_REDIS");
-        if (string.IsNullOrEmpty(connection)) return;
+        var connection = IntegrationPrerequisites.RequireConnection("LIRO_TEST_REDIS");
         suite.AsyncTest("DirectFallback_ReturnsToProxyWhenItsPauseExpires", async () =>
         {
             using var redis = await ConnectionMultiplexer.ConnectAsync(connection);
@@ -48,66 +47,89 @@ internal static class MarketDirectFallbackTests
                 // A live provider pause is allowed to veto fallback; do not modify the real pause in a test.
                 if (await redis.GetDatabase().KeyTimeToLiveAsync("liro:{market}:cooldown") > TimeSpan.Zero)
                     Check.That(!await transport.ShouldUseDirectAsync([proxy]), "Elude pausa del proveedor");
-                else Check.That(await transport.ShouldUseDirectAsync([proxy]), "No detecta proxy pausado");
+                else
+                    Check.That(await transport.ShouldUseDirectAsync([proxy]), "No detecta proxy pausado");
                 await redis.GetDatabase().KeyDeleteAsync(key);
                 Check.That(!await transport.ShouldUseDirectAsync([proxy]), "No vuelve automáticamente al proxy");
             }
             finally { await redis.GetDatabase().KeyDeleteAsync(key); }
         });
-        suite.AsyncTest("DirectBudget_AtomicHeadroom_PendingPriority_AndTwoPerMinute", async () =>
+        suite.AsyncTest("DynamicBudget_MarketGetsOneOf18_AndUnusedCapacityReturns", async () =>
         {
             using var redis = await ConnectionMultiplexer.ConnectAsync(connection);
-            var key = "liro:{test-direct-" + Guid.NewGuid().ToString("N") + "}:budget";
+            var key = "liro:{test-dynamic-" + Guid.NewGuid().ToString("N") + "}:budget";
+            // This fixture represents an already initialized budget; cold start has dedicated tests.
+            await redis.GetDatabase().StringSetAsync(key + ":mode", "completion-v2");
             var settings = Options.Create(new RobloxRequestOptions { BudgetKey = key, BudgetCapacity = 18, MinimumInterval = TimeSpan.Zero });
             var normal = new RedisRobloxRequestBudget(redis, settings);
-            var direct = new MarketDirectBudget(redis, settings.Value, 2);
+            var direct = new MarketDirectBudget(redis, settings.Value, 1);
             var db = redis.GetDatabase();
+            async Task Normal(string id)
+            {
+                TimeSpan wait;
+                while ((wait = await normal.TryAcquireAsync(id, default)) > TimeSpan.Zero)
+                    await Task.Delay(wait + TimeSpan.FromMilliseconds(2));
+                await normal.CompleteAsync(id, default);
+            }
             try
             {
-                await normal.TryAcquireAsync("catalog", default);
-                Check.That(await direct.TryAcquireAsync("blocked", default) > TimeSpan.Zero, "Ignora catálogo en curso");
-                await normal.CompleteAsync("catalog", default);
-                Check.That(await direct.TryAcquireAsync("quiet", default) > TimeSpan.Zero, "No respeta inactividad");
+                await normal.TryAcquireAsync("running", default);
+                Check.That(await direct.TryAcquireAsync("waiting", default) > TimeSpan.Zero, "Interrumpe una consulta en curso");
+                Check.That(await db.KeyExistsAsync(key + ":market-demand"), "No publica demanda de mercado");
+                await normal.CompleteAsync("running", default);
+                for (var i = 0; i < 16; i++)
+                    await Normal("n" + i);
                 await db.KeyDeleteAsync(key + ":next");
-                await AgeCompletionsAsync(db, key);
-                var attempts = await Task.WhenAll(Enumerable.Range(0, 5).Select(async i => (Id: "d" + i, Wait: await direct.TryAcquireAsync("d" + i, default))));
-                var admitted = attempts.Where(x => x.Wait == TimeSpan.Zero).ToArray();
-                Check.That(admitted.Length == 1, "Reserva concurrente no atómica");
-                await direct.CompleteAsync(admitted[0].Id, default);
-                Check.That(await direct.TryAcquireAsync("spacing", default) > TimeSpan.Zero, "No espacia respaldo");
-                await db.KeyDeleteAsync(new RedisKey[] { key + ":next", key + ":market-direct-next" });
-                await AgeCompletionsAsync(db, key);
-                Check.That(await direct.TryAcquireAsync("second", default) == TimeSpan.Zero, "No permite segundo envío");
-                await direct.CompleteAsync("second", default);
-                await db.KeyDeleteAsync(new RedisKey[] { key + ":next", key + ":market-direct-next" });
-                Check.That(await direct.TryAcquireAsync("third", default) > TimeSpan.Zero, "Supera dos consultas por minuto");
-                await db.KeyDeleteAsync(key + ":market-direct");
-                // Fill total occupancy to twelve; six slots must remain for normal requests.
-                for (var i = 0; i < 9; i++)
-                {
-                    TimeSpan wait;
-                    while ((wait = await normal.TryAcquireAsync("n" + i, default)) > TimeSpan.Zero)
-                        await Task.Delay(wait + TimeSpan.FromMilliseconds(2));
-                    await normal.CompleteAsync("n" + i, default);
-                }
-                await db.KeyDeleteAsync(key + ":next");
-                await AgeCompletionsAsync(db, key);
-                Check.That(await direct.TryAcquireAsync("headroom", default) > TimeSpan.Zero, "Consume margen del catálogo");
-                Check.That(await normal.TryAcquireAsync("priority", default) == TimeSpan.Zero, "Bloquea catálogo con cupo disponible");
-                await normal.CompleteAsync("priority", default);
+                Check.That(await normal.TryAcquireAsync("steal", default) > TimeSpan.Zero, "Catálogo roba el turno reservado");
+                Check.That(await direct.TryAcquireAsync("market", default) == TimeSpan.Zero, "Mercado sigue sin avanzar con 17 plazas ocupadas");
+                await direct.CompleteAsync("market", default);
+                Check.That(!await db.KeyExistsAsync(key + ":market-demand"), "Reserva permanente tras atender mercado");
+                Check.That(await direct.TryAcquireAsync("second", default) > TimeSpan.Zero, "Supera una consulta por minuto");
+                Check.That(!await db.KeyExistsAsync(key + ":market-demand"), "Reserva cupo aunque mercado esté en cooldown local");
+                Check.That(await normal.TryAcquireAsync("over18", default) > TimeSpan.Zero, "Supera el máximo compartido");
+                Check.That(await db.SortedSetLengthAsync(key) == 18, "La reserva perdió contabilidad");
+                // Only this isolated test window is cleared: confirm lending all 18 when market is not due.
+                await db.KeyDeleteAsync(new RedisKey[] { key, key + ":next" });
+                for (var i = 0; i < 18; i++)
+                    await Normal("borrow" + i);
+                Check.That(await db.SortedSetLengthAsync(key) == 18, "No presta toda la capacidad disponible");
+                Check.That(await normal.TryAcquireAsync("overBorrow", default) > TimeSpan.Zero, "Prestar cupo excede el límite");
             }
             finally
             {
-                await db.KeyDeleteAsync(new RedisKey[] { key, key + ":next", key + ":pending", key + ":mode", key + ":market-direct", key + ":market-direct-next" });
+                await db.KeyDeleteAsync(new RedisKey[] { key, key + ":next", key + ":pending", key + ":mode", key + ":leases", key + ":market-direct", key + ":market-direct-next", key + ":market-demand" });
+            }
+        });
+        suite.AsyncTest("DynamicBudget_AbandonedDemandExpires_AndConcurrentReservationsStayBounded", async () =>
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(connection);
+            var key = "liro:{test-dynamic-" + Guid.NewGuid().ToString("N") + "}:budget";
+            // This fixture represents an already initialized budget; cold start has dedicated tests.
+            await redis.GetDatabase().StringSetAsync(key + ":mode", "completion-v2");
+            var settings = Options.Create(new RobloxRequestOptions { BudgetKey = key, BudgetCapacity = 18, MinimumInterval = TimeSpan.Zero });
+            var normal = new RedisRobloxRequestBudget(redis, settings);
+            var direct = new MarketDirectBudget(redis, settings.Value, 1);
+            var db = redis.GetDatabase();
+            try
+            {
+                await normal.TryAcquireAsync("pending", default);
+                await direct.TryAcquireAsync("abandoned", default);
+                var ttl = await db.KeyTimeToLiveAsync(key + ":market-demand");
+                Check.That(ttl > TimeSpan.Zero && ttl <= TimeSpan.FromSeconds(5), "Demanda abandonada no vence");
+                await Task.Delay(TimeSpan.FromSeconds(5.1));
+                Check.That(!await db.KeyExistsAsync(key + ":market-demand"), "Demanda vencida bloquea catálogo");
+                await normal.CompleteAsync("pending", default);
+                await db.KeyDeleteAsync(key + ":next");
+                var attempts = await Task.WhenAll(Enumerable.Range(0, 12).Select(async i => (Id: "d" + i, Wait: await direct.TryAcquireAsync("d" + i, default))));
+                var admitted = attempts.Where(x => x.Wait == TimeSpan.Zero).ToArray();
+                Check.That(admitted.Length == 1, "Dos procesos reservan el mismo turno");
+                await direct.CompleteAsync(admitted[0].Id, default);
+                Check.That(await direct.TryAcquireAsync("another", default) > TimeSpan.Zero, "Otro cliente reinicia contador directo");
+            }
+            finally
+            {
+                await db.KeyDeleteAsync(new RedisKey[] { key, key + ":next", key + ":pending", key + ":mode", key + ":leases", key + ":market-direct", key + ":market-direct-next", key + ":market-demand" });
             }
         });
     }
-
-    private static Task<RedisResult> AgeCompletionsAsync(IDatabase db, string key) => db.ScriptEvaluateAsync("""
-        local t = redis.call('TIME')
-        local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
-        local entries = redis.call('ZRANGE', KEYS[1], 0, -1)
-        for _, id in ipairs(entries) do redis.call('ZADD', KEYS[1], now - 10000, id) end
-        return #entries
-        """, [key]);
 }

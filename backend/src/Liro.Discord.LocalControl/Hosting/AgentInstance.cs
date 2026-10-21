@@ -11,5 +11,8 @@ public sealed class AgentInstance : IDisposable
         lease = new FileStream(Path.Combine(localDirectory, "agent.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
     }
 
-    public void Dispose() { lease.Dispose(); }
+    public void Dispose()
+    {
+        lease.Dispose();
+    }
 }

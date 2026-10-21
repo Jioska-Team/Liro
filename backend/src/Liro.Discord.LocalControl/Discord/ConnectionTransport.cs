@@ -13,18 +13,24 @@ public sealed class ConnectionTransport(DiscordSocketClient client, AgentOptions
     private async Task<ITextChannel> ChannelAsync(CancellationToken token)
     {
         if (await client.Rest.GetChannelAsync(options.ChannelId, Requests(token)) is not ITextChannel channel
-            || channel.GuildId != options.GuildId) throw new InvalidOperationException("Canal no autorizado.");
+            || channel.GuildId != options.GuildId)
+            throw new InvalidOperationException("Canal no autorizado.");
         return channel;
     }
 
     private async Task<IUserMessage?> MessageAsync(ulong id, CancellationToken token)
     {
-        if (id == options.PanelMessageId) throw new InvalidOperationException("El panel no es un mensaje de conexión.");
+        if (id == options.PanelMessageId)
+            throw new InvalidOperationException("El panel no es un mensaje de conexión.");
         var channel = await ChannelAsync(token);
         IMessage? message;
-        try { message = await channel.GetMessageAsync(id, options: Requests(token)); }
+        try
+        {
+            message = await channel.GetMessageAsync(id, options: Requests(token));
+        }
         catch (HttpException exception) when (exception.HttpCode == HttpStatusCode.NotFound) { return null; }
-        if (message is null) return null;
+        if (message is null)
+            return null;
         if (message is not IUserMessage editable || message.Author.Id != client.CurrentUser.Id)
             throw new InvalidOperationException("El mensaje no pertenece al bot.");
         return editable;
@@ -40,7 +46,8 @@ public sealed class ConnectionTransport(DiscordSocketClient client, AgentOptions
     public async Task<bool> UpdateAsync(ulong messageId, string content, CancellationToken token)
     {
         var message = await MessageAsync(messageId, token);
-        if (message is null) return false;
+        if (message is null)
+            return false;
         try
         {
             await message.ModifyAsync(properties =>
@@ -56,8 +63,12 @@ public sealed class ConnectionTransport(DiscordSocketClient client, AgentOptions
     public async Task DeleteAsync(ulong messageId, CancellationToken token)
     {
         var message = await MessageAsync(messageId, token);
-        if (message is null) return;
-        try { await message.DeleteAsync(Requests(token)); }
+        if (message is null)
+            return;
+        try
+        {
+            await message.DeleteAsync(Requests(token));
+        }
         catch (HttpException exception) when (exception.HttpCode == HttpStatusCode.NotFound) { }
     }
 }

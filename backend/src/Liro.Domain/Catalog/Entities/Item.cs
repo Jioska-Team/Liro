@@ -14,15 +14,20 @@ public sealed class Item : IHasDomainEvents
     public CatalogItemType ItemType { get; private set; } = CatalogItemType.Asset;
     // Durable provider references also retain components that have not been imported yet.
     public long[] BundleComponentAssetIds { get; private set; } = [];
-    public DateTime? BundleComponentsObservedAtUtc { get; private set; }
+    public DateTime? BundleComponentsObservedAtUtc
+    {
+        get; private set;
+    }
 
     public bool UpdateBundleComponents(IEnumerable<long> assetIds, DateTime observedAtUtc)
     {
         if (ItemType != CatalogItemType.Bundle || observedAtUtc.Kind != DateTimeKind.Utc)
             throw new ArgumentException("Bundle components require a bundle and UTC observation time.");
         var ids = assetIds.Distinct().Order().ToArray();
-        if (ids.Any(id => id <= 0) || ids.Length > 1000) throw new ArgumentException("Invalid component IDs.");
-        if (BundleComponentsObservedAtUtc is { } previous && observedAtUtc <= previous) return false;
+        if (ids.Any(id => id <= 0) || ids.Length > 1000)
+            throw new ArgumentException("Invalid component IDs.");
+        if (BundleComponentsObservedAtUtc is { } previous && observedAtUtc <= previous)
+            return false;
         BundleComponentAssetIds = ids;
         BundleComponentsObservedAtUtc = observedAtUtc;
         return true;
@@ -88,11 +93,15 @@ public sealed class Item : IHasDomainEvents
     {
         get; private set;
     }
-    public DateTime? ThumbnailCheckedAtUtc { get; private set; }
+    public DateTime? ThumbnailCheckedAtUtc
+    {
+        get; private set;
+    }
 
     public void MarkThumbnailChecked(DateTime now)
     {
-        if (now.Kind != DateTimeKind.Utc) throw new ArgumentException("UTC required.", nameof(now));
+        if (now.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("UTC required.", nameof(now));
         ThumbnailCheckedAtUtc = now;
     }
     public DateTime FirstSeenAt
@@ -252,7 +261,8 @@ public sealed class Item : IHasDomainEvents
         }
 
         // Always retain freshness and source, but only append a data change to history.
-        if (changed) _pendingMarketSnapshots.Add(new ItemMarketSnapshot(MarketState));
+        if (changed)
+            _pendingMarketSnapshots.Add(new ItemMarketSnapshot(MarketState));
     }
 
     public void MarkMarketPersisted()

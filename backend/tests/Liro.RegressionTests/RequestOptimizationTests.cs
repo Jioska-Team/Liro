@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Liro.RegressionTests;
+
 internal static class RequestOptimizationTests
 {
     public static void Register(RegressionSuite suite)
@@ -47,10 +48,12 @@ internal static class RequestOptimizationTests
             var handler = new BlockingHttp();
             using var http = new HttpClient(handler) { BaseAddress = new("https://catalog.roblox.com/") };
             var client = new RobloxCatalogClient(http, new RobloxCatalogSession(TimeProvider.System));
-            using var a = new CancellationTokenSource(); using var b = new CancellationTokenSource();
+            using var a = new CancellationTokenSource();
+            using var b = new CancellationTokenSource();
             var first = client.GetItemsAsync([new(1)], a.Token);
             var second = client.GetItemsAsync([new(1)], b.Token);
-            a.Cancel(); b.Cancel();
+            a.Cancel();
+            b.Cancel();
             await Check.ThrowsAsync<OperationCanceledException>(async () => await first);
             await Check.ThrowsAsync<OperationCanceledException>(async () => await second);
             await handler.Canceled.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -72,7 +75,7 @@ internal static class RequestOptimizationTests
         });
         suite.AsyncTest("Las busquedas identicas se comparten sin retrasar la prioridad principal", async () =>
         {
-            foreach(var main in new[] { false, true })
+            foreach (var main in new[] { false, true })
             {
                 var handler = new BlockingHttp();
                 using var http = new HttpClient(handler) { BaseAddress = new("https://catalog.roblox.com/") };
@@ -92,7 +95,15 @@ internal static class RequestOptimizationTests
             var now = new DateTimeOffset(2026, 10, 17, 0, 0, 0, TimeSpan.Zero);
             var clock = new Clock { Now = now };
             var session = new RobloxCatalogSession(clock);
-            session.Store(new(1, "Limited", null, ItemMarketStatus.Limited) { ObservedAtUtc = now.UtcDateTime, Details = new() { CreatorId = 1, CreatorType = "User" } });
+            session.Store(new(1, "Limited", null, ItemMarketStatus.Limited)
+            {
+                ObservedAtUtc = now.UtcDateTime,
+                Details = new()
+                {
+                    CreatorId = 1,
+                    CreatorType = "User"
+                }
+            });
             clock.Now = now.AddSeconds(20);
             Check.That(session.Find(new(1)) is null && session.FindRecent(new(1), TimeSpan.FromMinutes(1)) is not null,
                 "Se amplió la vigencia general o se borró una observación todavía útil");
@@ -124,8 +135,16 @@ internal static class RequestOptimizationTests
             {
                 calls++;
                 var token = request.Headers.TryGetValues("x-csrf-token", out var values) ? values.Single() : null;
-                if (calls == 1) { Check.That(token is null, "Token inicial inesperado"); return Challenge("primero"); }
-                if (calls == 3) { Check.That(token == "primero", "No se reutilizó el token"); return Challenge("segundo"); }
+                if (calls == 1)
+                {
+                    Check.That(token is null, "Token inicial inesperado");
+                    return Challenge("primero");
+                }
+                if (calls == 3)
+                {
+                    Check.That(token == "primero", "No se reutilizó el token");
+                    return Challenge("segundo");
+                }
                 Check.That(token == (calls == 2 ? "primero" : "segundo"), "Token no renovado");
                 return Details(request);
             });
@@ -137,9 +156,11 @@ internal static class RequestOptimizationTests
         });
         suite.AsyncTest("Los clientes comparten detalles recientes y solo solicitan los identificadores faltantes", async () =>
         {
-            var calls = 0; var sizes = new List<int>();
+            var calls = 0;
+            var sizes = new List<int>();
             using var http = Http(request => { calls++; sizes.Add(Keys(request).Length); return Details(request); });
-            var clock = new Clock(); var state = new RobloxCatalogSession(clock);
+            var clock = new Clock();
+            var state = new RobloxCatalogSession(clock);
             var first = await new RobloxCatalogClient(http, state).GetItemAsync(1);
             var results = await new RobloxCatalogClient(http, state).GetItemsAsync([new(1), new(2)]);
             Check.That(calls == 2 && sizes.SequenceEqual(new[] { 1, 1 }) && results[new(1)].Item!.ObservedAtUtc == first!.ObservedAtUtc,
@@ -167,7 +188,8 @@ internal static class RequestOptimizationTests
             var order = new List<string>();
             var initial = gate.SendAsync(async ct => { await release.Task; return new(HttpStatusCode.OK); }, default);
             Task<HttpResponseMessage> low;
-            using (RobloxRequestPriority.Background()) low = gate.SendAsync(ct => { order.Add("miniatura"); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default);
+            using (RobloxRequestPriority.Background())
+                low = gate.SendAsync(ct => { order.Add("miniatura"); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default);
             var jobs = new List<Task<HttpResponseMessage>> { initial, low };
             for (var i = 0; i < 10; i++)
             {
@@ -176,7 +198,8 @@ internal static class RequestOptimizationTests
             }
             jobs.Add(gate.SendAsync(ct => { order.Add("ordinaria"); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default));
             release.SetResult();
-            foreach (var response in await Task.WhenAll(jobs)) response.Dispose();
+            foreach (var response in await Task.WhenAll(jobs))
+                response.Dispose();
             Check.That(order[0] == "limitado" && order.IndexOf("ordinaria") == 3 && order.IndexOf("miniatura") == 8,
                 "Prioridad o equidad incorrectas");
         });
@@ -197,9 +220,13 @@ internal static class RequestOptimizationTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Interlocked.Increment(ref Calls);
-            try { await Release.Task.WaitAsync(ct); }
+            try
+            {
+                await Release.Task.WaitAsync(ct);
+            }
             catch (OperationCanceledException) { Canceled.TrySetResult(); throw; }
-            if (Fail) return new(HttpStatusCode.ServiceUnavailable);
+            if (Fail)
+                return new(HttpStatusCode.ServiceUnavailable);
             return request.Method == HttpMethod.Post ? Details(request) : Json("{\"data\":[],\"nextPageCursor\":null}");
         }
     }
@@ -213,7 +240,8 @@ internal static class RequestOptimizationTests
     private static HttpResponseMessage Challenge(string token)
     {
         var result = new HttpResponseMessage(HttpStatusCode.Forbidden);
-        result.Headers.Add("x-csrf-token", token); return result;
+        result.Headers.Add("x-csrf-token", token);
+        return result;
     }
     private static CatalogItemKey[] Keys(HttpRequestMessage request)
     {

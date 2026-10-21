@@ -15,7 +15,10 @@ internal sealed class ManualClock : TimeProvider
     public void Advance(TimeSpan amount)
     {
         now += amount;
-        foreach (var timer in timers.ToArray()) { timer.Fire(now); }
+        foreach (var timer in timers.ToArray())
+        {
+            timer.Fire(now);
+        }
     }
     private sealed class ManualTimer(ManualClock clock, TimerCallback callback, object? state) : ITimer
     {
@@ -29,11 +32,21 @@ internal sealed class ManualClock : TimeProvider
         }
         public void Fire(DateTimeOffset time)
         {
-            if (due is null || due > time) { return; }
+            if (due is null || due > time)
+            {
+                return;
+            }
             due = period > TimeSpan.Zero ? time + period : null;
             callback(state);
         }
-        public void Dispose() { due = null; }
-        public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+        public void Dispose()
+        {
+            due = null;
+        }
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }

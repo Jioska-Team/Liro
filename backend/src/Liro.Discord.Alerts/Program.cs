@@ -19,9 +19,15 @@ try
     builder.Services.AddSingleton(options);
     builder.Services.AddSingleton(new AlertStateDirectory(directory));
     builder.Services.AddSingleton(new DiscordSocketClient(new DiscordSocketConfig
-        { GatewayIntents = GatewayIntents.Guilds, LogLevel = LogSeverity.Critical }));
+    {
+        GatewayIntents = GatewayIntents.Guilds,
+        LogLevel = LogSeverity.Critical
+    }));
     builder.Services.AddSingleton(_ => new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
-        { Timeout = TimeSpan.FromSeconds(20), MaxResponseContentBufferSize = 512 * 1024 });
+    {
+        Timeout = TimeSpan.FromSeconds(20),
+        MaxResponseContentBufferSize = 512 * 1024
+    });
     builder.Services.AddSingleton<IBandwidthUsageSource, WebshareUsageClient>();
     builder.Services.AddSingleton<IBandwidthAlertDelivery, DiscordBandwidthTransport>();
     builder.Services.AddSingleton(new BandwidthAlertStore(new JsonBandwidthAlertStateStore(directory, options.ChannelId), options.ChannelId));

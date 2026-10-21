@@ -8,8 +8,10 @@ public sealed class CatalogLimitedWatchlist(LiroDbContext db) : ICatalogLimitedW
 {
     public async Task TrackAsync(IReadOnlyCollection<CatalogItemKey> keys, DateTime now, CancellationToken ct)
     {
-        if (now.Kind != DateTimeKind.Utc) throw new ArgumentException("UTC required.", nameof(now));
-        foreach (var key in keys) key.Validate();
+        if (now.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("UTC required.", nameof(now));
+        foreach (var key in keys)
+            key.Validate();
         foreach (var chunk in keys.Distinct().Chunk(1000))
         {
             var types = chunk.Select(x => x.Type.ToString()).ToArray();
@@ -71,7 +73,8 @@ public sealed class CatalogLimitedWatchlist(LiroDbContext db) : ICatalogLimitedW
 
     public async Task CompleteObservedAsync(IReadOnlyList<CatalogLimitedLease> entries, IReadOnlyDictionary<CatalogItemKey, DateTime> observations, TimeSpan interval, CancellationToken ct)
     {
-        if (entries.Count == 0) return;
+        if (entries.Count == 0)
+            return;
         var types = entries.Select(x => x.Key.Type.ToString()).ToArray();
         var ids = entries.Select(x => x.Key.Id).ToArray();
         var leases = entries.Select(x => x.LeaseUntilUtc).ToArray();

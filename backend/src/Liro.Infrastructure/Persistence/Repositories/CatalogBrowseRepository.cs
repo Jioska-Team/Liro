@@ -26,7 +26,8 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
 
     public async Task<CatalogPage> BrowseAsync(int page, int pageSize, CancellationToken ct)
     {
-        if (page is < 1 or > 10000 || pageSize is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(page));
+        if (page is < 1 or > 10000 || pageSize is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(page));
         var items = await db.Items.AsNoTracking().Where(x => x.CreatorId == 1 && x.CreatorType == "User")
             .Where(CatalogVisibility.Visible).OrderByDescending(x => x.RobloxCreatedAtUtc.HasValue)
             .ThenByDescending(x => x.RobloxCreatedAtUtc).ThenBy(x => x.Id)
@@ -34,10 +35,29 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
         return new(items.Take(pageSize).ToArray(), items.Count > pageSize);
     }
 
+    public async Task<CatalogPage> BrowseAfterAsync(CatalogCursor? after, int pageSize, CancellationToken ct)
+    {
+        if (pageSize is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(pageSize));
+        if (after is { } position && (position.Id == Guid.Empty || position.CreatedAtUtc is { Kind: not DateTimeKind.Utc }))
+            throw new ArgumentException("Invalid catalog cursor.", nameof(after));
+        var query = db.Items.AsNoTracking().Where(x => x.CreatorId == 1 && x.CreatorType == "User").Where(CatalogVisibility.Visible);
+        if (after is { CreatedAtUtc: { } created })
+            query = query.Where(x => x.RobloxCreatedAtUtc == null || x.RobloxCreatedAtUtc < created
+                || (x.RobloxCreatedAtUtc == created && x.Id.CompareTo(after.Id) > 0));
+        else if (after is not null)
+            query = query.Where(x => x.RobloxCreatedAtUtc == null && x.Id.CompareTo(after.Id) > 0);
+        var items = await query.OrderByDescending(x => x.RobloxCreatedAtUtc.HasValue)
+            .ThenByDescending(x => x.RobloxCreatedAtUtc).ThenBy(x => x.Id)
+            .Take(pageSize + 1).ToListAsync(ct);
+        return new(items.Take(pageSize).ToArray(), items.Count > pageSize);
+    }
+
     public async Task<BundleContents?> GetBundleContentsAsync(long bundleId, CancellationToken ct)
     {
         var bundle = await db.Items.AsNoTracking().SingleOrDefaultAsync(x => x.ItemType == CatalogItemType.Bundle && x.RobloxAssetId == bundleId, ct);
-        if (bundle is null) return null;
+        if (bundle is null)
+            return null;
         // Read the durable references as well, so details are correct during background link reconciliation.
         var components = await db.Items.AsNoTracking().Where(x => x.ItemType == CatalogItemType.Asset
             && bundle.BundleComponentAssetIds.Contains(x.RobloxAssetId)).OrderBy(x => x.RobloxAssetId).ToListAsync(ct);
@@ -58,7 +78,8 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
 
     public async Task<IReadOnlyList<CatalogItemKey>> GetMissingComponentsAsync(int limit, CancellationToken ct)
     {
-        if (limit is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(limit));
+        if (limit is < 1 or > 100)
+            throw new ArgumentOutOfRangeException(nameof(limit));
         var now = DateTime.UtcNow;
         var ids = await db.Database.SqlQuery<long>($"""
             SELECT DISTINCT part.id AS "Value" FROM "Items" b

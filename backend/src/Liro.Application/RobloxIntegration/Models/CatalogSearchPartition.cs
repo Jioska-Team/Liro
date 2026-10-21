@@ -4,7 +4,10 @@ namespace Liro.Application.RobloxIntegration.Models;
 
 public sealed record CatalogSearchPartition(CatalogSearchScope Scope)
 {
-    public int? CategoryFilter { get; init; }
+    public int? CategoryFilter
+    {
+        get; init;
+    }
     public int? AssetTypeId
     {
         get; init;

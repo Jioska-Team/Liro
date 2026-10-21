@@ -2,9 +2,18 @@ namespace Liro.Discord.Alerts.Configuration;
 
 public sealed class AlertOptions
 {
-    public ulong ApplicationId { get; set; }
-    public ulong GuildId { get; set; }
-    public ulong ChannelId { get; set; }
+    public ulong ApplicationId
+    {
+        get; set;
+    }
+    public ulong GuildId
+    {
+        get; set;
+    }
+    public ulong ChannelId
+    {
+        get; set;
+    }
     public string BotToken { get; set; } = "";
     public string WebshareApiKey { get; set; } = "";
     public string StateDirectory { get; set; } = "";

@@ -24,9 +24,11 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
     {
         key.Validate();
         cancellationToken.ThrowIfCancellationRequested();
-        if (session?.Find(key) is { } cached) return cached;
+        if (session?.Find(key) is { } cached)
+            return cached;
         var item = await GetSingleCoreAsync(key, cancellationToken);
-        if (item is not null) session?.Store(item);
+        if (item is not null)
+            session?.Store(item);
         return item;
     }
     private async Task<RobloxCatalogItem?> GetSingleCoreAsync(CatalogItemKey key, CancellationToken cancellationToken)
@@ -68,8 +70,10 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
     public async Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetItemsAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken = default)
     {
         var unique = keys.Distinct().OrderBy(k => k.Type).ThenBy(k => k.Id).ToArray();
-        if (unique.Length > 100) throw new ArgumentOutOfRangeException(nameof(keys));
-        foreach (var key in unique) key.Validate();
+        if (unique.Length > 100)
+            throw new ArgumentOutOfRangeException(nameof(keys));
+        foreach (var key in unique)
+            key.Validate();
         return session is null ? await GetItemsCachedAsync(unique, cancellationToken)
             : await session.ShareAsync("batch:" + string.Join(",", unique.Select(k => $"{k.Type}:{k.Id}")),
                 token => GetItemsCachedAsync(unique, token), cancellationToken);
@@ -77,11 +81,15 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
     private async Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetItemsCachedAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken cancellationToken)
     {
         var unique = keys.Distinct().ToArray();
-        if (unique.Length > 100) throw new ArgumentOutOfRangeException(nameof(keys));
-        foreach (var key in unique) key.Validate();
+        if (unique.Length > 100)
+            throw new ArgumentOutOfRangeException(nameof(keys));
+        foreach (var key in unique)
+            key.Validate();
         cancellationToken.ThrowIfCancellationRequested();
         var result = new Dictionary<CatalogItemKey, RobloxCatalogResult>();
-        foreach (var key in unique) if (session?.Find(key) is { } cached) result[key] = new(cached, null);
+        foreach (var key in unique)
+            if (session?.Find(key) is { } cached)
+                result[key] = new(cached, null);
         var reused = result.Count;
         var missing = unique.Where(key => !result.ContainsKey(key)).ToArray();
         if (missing.Length > 0)
@@ -90,10 +98,12 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
             foreach (var pair in fetched)
             {
                 result[pair.Key] = pair.Value;
-                if (pair.Value.Error is null && pair.Value.Item is { } item) session?.Store(item);
+                if (pair.Value.Error is null && pair.Value.Item is { } item)
+                    session?.Store(item);
             }
         }
-        if (reused > 0 && logger is not null) Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(logger,
+        if (reused > 0 && logger is not null)
+            Microsoft.Extensions.Logging.LoggerExtensions.LogInformation(logger,
             "Detalles recientes reutilizados: {Reused}; identificadores enviados a Roblox: {Requested}.", reused, missing.Length);
         return result;
     }
@@ -209,7 +219,8 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
             LogForbidden("ReintentoFallido", true, 0, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             throw;
         }
-        if (retryResponse.StatusCode == HttpStatusCode.Forbidden) tokenState.RejectToken(token);
+        if (retryResponse.StatusCode == HttpStatusCode.Forbidden)
+            tokenState.RejectToken(token);
         LogForbidden(retryResponse.IsSuccessStatusCode ? "Recuperado"
             : retryResponse.StatusCode == HttpStatusCode.Forbidden ? "Definitivo" : "ReintentoFallido",
             true, (int)retryResponse.StatusCode, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
@@ -315,15 +326,18 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
     private static IReadOnlyList<long>? ReadBundleComponents(JsonElement item, CatalogItemKey key)
     {
         if (key.Type != CatalogItemType.Bundle || !item.TryGetProperty("bundledItems", out var components)
-            || components.ValueKind == JsonValueKind.Null) return null;
-        if (components.ValueKind != JsonValueKind.Array) throw new JsonException("Invalid bundle components.");
+            || components.ValueKind == JsonValueKind.Null)
+            return null;
+        if (components.ValueKind != JsonValueKind.Array)
+            throw new JsonException("Invalid bundle components.");
         var ids = new HashSet<long>();
         foreach (var component in components.EnumerateArray())
         {
             if (component.ValueKind != JsonValueKind.Object || !component.TryGetProperty("type", out var type))
                 throw new JsonException("Invalid bundle component type.");
             // UserOutfit is a different namespace, never an item/component ID.
-            if (type.ValueKind == JsonValueKind.String && type.GetString() == "UserOutfit") continue;
+            if (type.ValueKind == JsonValueKind.String && type.GetString() == "UserOutfit")
+                continue;
             if (!(type.ValueKind == JsonValueKind.String && type.GetString() == "Asset")
                 && !(type.ValueKind == JsonValueKind.Number && type.TryGetInt32(out var value) && value == 1))
                 throw new JsonException("Unsupported bundle component type.");
@@ -331,7 +345,8 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
                 throw new JsonException("Invalid bundle component ID.");
             ids.Add(number);
         }
-        if (ids.Count > 1000) throw new JsonException("Too many bundle components.");
+        if (ids.Count > 1000)
+            throw new JsonException("Too many bundle components.");
         return ids.Order().ToArray();
     }
 

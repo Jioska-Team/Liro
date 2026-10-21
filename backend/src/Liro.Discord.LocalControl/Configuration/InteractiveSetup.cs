@@ -12,7 +12,10 @@ public static class InteractiveSetup
         if (File.Exists(Path.Combine(localDirectory, "settings.json")) || File.Exists(Path.Combine(localDirectory, "token.dpapi")))
         {
             Console.Write("Ya existe configuracion local. Escribe RECONFIGURAR para reemplazarla: ");
-            if (Console.ReadLine() != "RECONFIGURAR") { return; }
+            if (Console.ReadLine() != "RECONFIGURAR")
+            {
+                return;
+            }
         }
         var options = new AgentOptions
         {
@@ -23,7 +26,10 @@ public static class InteractiveSetup
             RoleId = ReadId("ID del rol autorizado")
         };
         var network = Read("Indice de interfaz LAN (vacio para deteccion automatica)", optional: true);
-        if (network.Length > 0) { options.InterfaceIndex = int.Parse(network, System.Globalization.CultureInfo.InvariantCulture); }
+        if (network.Length > 0)
+        {
+            options.InterfaceIndex = int.Parse(network, System.Globalization.CultureInfo.InvariantCulture);
+        }
         var docker = Read("Ruta de Docker Desktop.exe (vacio para deteccion automatica)", optional: true);
         options.DockerDesktopPath = docker.Length > 0 ? docker : null;
         options.Validate();
@@ -48,7 +54,10 @@ public static class InteractiveSetup
     {
         Console.Write(prompt + ": ");
         var value = Console.ReadLine()?.Trim() ?? "";
-        if (!optional && value.Length == 0) { throw new InvalidOperationException("Falta un valor obligatorio."); }
+        if (!optional && value.Length == 0)
+        {
+            throw new InvalidOperationException("Falta un valor obligatorio.");
+        }
         return value;
     }
 

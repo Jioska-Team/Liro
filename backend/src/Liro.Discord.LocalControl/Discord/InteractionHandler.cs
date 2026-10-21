@@ -81,15 +81,24 @@ public sealed class InteractionHandler(AgentOptions options, IStartupCoordinator
                 await reply.ShowConnectionsAsync(options.ShareAspireInChannel ? combined : message, combined);
                 return;
             }
-            if (action == StopButtonId && result.Status == StartupStatus.Stopped) { await reply.ClearConnectionsAsync(); }
+            if (action == StopButtonId && result.Status == StartupStatus.Stopped)
+            {
+                await reply.ClearConnectionsAsync();
+            }
             await reply.CompleteAsync(message);
         }
         catch (Exception) { log.Write(AgentEvent.Failed); }
 
         async Task RefreshAsync()
         {
-            if (refreshPanel is null) { return; }
-            try { await refreshPanel(cancellationToken); }
+            if (refreshPanel is null)
+            {
+                return;
+            }
+            try
+            {
+                await refreshPanel(cancellationToken);
+            }
             catch (Exception) { log.Write(AgentEvent.Failed); }
         }
     }

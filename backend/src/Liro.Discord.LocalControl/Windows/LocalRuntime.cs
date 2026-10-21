@@ -35,9 +35,15 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
     private async Task<bool> CheckDockerAsync(CancellationToken cancellationToken)
     {
         var docker = Path.Combine(Path.GetDirectoryName(DockerDesktopPath())!, "resources", "bin", "docker.exe");
-        if (!File.Exists(docker)) { throw new InvalidOperationException("No se encontro Docker CLI local."); }
+        if (!File.Exists(docker))
+        {
+            throw new InvalidOperationException("No se encontro Docker CLI local.");
+        }
         var context = await commands.RunAsync(docker, ["context", "inspect", "desktop-linux", "--format", "{{json .Endpoints.docker.Host}}"], cancellationToken);
-        if (context.ExitCode != 0) { return false; }
+        if (context.ExitCode != 0)
+        {
+            return false;
+        }
         var address = JsonSerializer.Deserialize<string>(context.Output.Trim());
         if (address is not ("npipe:////./pipe/dockerDesktopLinuxEngine" or "npipe:////./pipe/docker_engine"))
         {
@@ -52,7 +58,10 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
     {
         cancellationToken.ThrowIfCancellationRequested();
         var processes = Process.GetProcessesByName("Docker Desktop");
-        try { return Task.FromResult(processes.Length > 0); }
+        try
+        {
+            return Task.FromResult(processes.Length > 0);
+        }
         finally { foreach (var process in processes) { process.Dispose(); } }
     }
 
@@ -62,7 +71,9 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
         {
             using var process = Process.Start(new ProcessStartInfo(DockerDesktopPath())
             {
-                UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
             }) ?? throw new InvalidOperationException("No se pudo abrir Docker Desktop.");
         }
     }
@@ -85,8 +96,14 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
                     var command = process["CommandLine"] as string;
                     if (name.Equals("Liro.AppHost.exe", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (executable is null) { return Task.FromResult(AppHostState.Unknown); }
-                        if (executable.StartsWith(backend, StringComparison.OrdinalIgnoreCase)) { return Task.FromResult(AppHostState.Running); }
+                        if (executable is null)
+                        {
+                            return Task.FromResult(AppHostState.Unknown);
+                        }
+                        if (executable.StartsWith(backend, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return Task.FromResult(AppHostState.Running);
+                        }
                     }
                     if (command is not null && command.Contains(backend, StringComparison.OrdinalIgnoreCase)
                         && (command.Contains("Liro.AppHost", StringComparison.OrdinalIgnoreCase) || command.Contains("Start-Lan.ps1", StringComparison.OrdinalIgnoreCase)))
@@ -131,7 +148,9 @@ public sealed class LocalRuntime(AgentOptions options, ICommandRunner commands) 
         }
         var info = new ProcessStartInfo(ProcessRunner.PowerShellPath)
         {
-            WorkingDirectory = options.BackendPath, UseShellExecute = false, CreateNoWindow = true,
+            WorkingDirectory = options.BackendPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
         foreach (var argument in new[] { "-NoProfile", "-NonInteractive", "-File", Path.Combine(options.BackendPath, "scripts", "development", "Start-Lan.ps1"), "-AgentMode", "-InterfaceIndex", endpoint.InterfaceIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) })

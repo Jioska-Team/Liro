@@ -10,7 +10,10 @@ internal static class CatalogWorkerDelay
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            try { return await read(ct); }
+            try
+            {
+                return await read(ct);
+            }
             catch (RobloxRateLimitedException exception)
             {
                 logger.LogInformation("Se conserva la página pendiente, el orden de las búsquedas y el tiempo del recorrido.");

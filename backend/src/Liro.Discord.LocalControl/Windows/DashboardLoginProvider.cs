@@ -14,7 +14,10 @@ public sealed class DashboardLoginProvider(AgentOptions options, ICommandRunner 
     public async Task<Uri?> GetLoginAsync(CancellationToken cancellationToken)
     {
         var executable = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".aspire", "bin", "aspire.exe");
-        if (!File.Exists(executable)) { return null; }
+        if (!File.Exists(executable))
+        {
+            return null;
+        }
         var result = await commands.RunAsync(executable, ["ps", "--format", "Json"], cancellationToken);
         var login = result.ExitCode == 0 ? Parse(result.Output, options.BackendPath) : null;
         return login;
@@ -24,7 +27,10 @@ public sealed class DashboardLoginProvider(AgentOptions options, ICommandRunner 
     public static Uri? Parse(string output, string backendPath)
     {
         using var json = JsonDocument.Parse(output);
-        if (json.RootElement.ValueKind != JsonValueKind.Array) { return null; }
+        if (json.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
         var project = Path.GetFullPath(Path.Combine(backendPath, "src", "Liro.AppHost", "Liro.AppHost.csproj"));
         var matches = new List<Uri>();
         foreach (var entry in json.RootElement.EnumerateArray())

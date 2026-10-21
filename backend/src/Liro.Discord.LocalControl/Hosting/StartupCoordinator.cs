@@ -10,7 +10,10 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
     private DateTimeOffset failedAt = DateTimeOffset.MinValue;
     private StartupResult? lastFailure;
 
-    private enum Operation { EnsureReady, Restart, Stop }
+    private enum Operation
+    {
+        EnsureReady, Restart, Stop
+    }
     private Operation activeOperation;
 
     public Task<StartupResult> EnsureReadyAsync(CancellationToken token) => ExecuteAsync(Operation.EnsureReady, token);
@@ -57,10 +60,19 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
         try
         {
             var state = await runtime.GetAppHostStateAsync(cancellationToken);
-            if (state == AppHostState.Stopped) { return new(StartupStatus.Stopped); }
-            if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new(StartupStatus.Unknown); }
+            if (state == AppHostState.Stopped)
+            {
+                return new(StartupStatus.Stopped);
+            }
+            if (state is AppHostState.Unknown or AppHostState.Incompatible)
+            {
+                return new(StartupStatus.Unknown);
+            }
             var endpoint = await network.ResolveForStatusAsync(cancellationToken);
-            if (await probe.IsReadyAsync(endpoint, cancellationToken)) { return new(StartupStatus.Ready, endpoint.ApiBaseUri); }
+            if (await probe.IsReadyAsync(endpoint, cancellationToken))
+            {
+                return new(StartupStatus.Ready, endpoint.ApiBaseUri);
+            }
             return new(state == AppHostState.Starting ? StartupStatus.Starting : StartupStatus.Unhealthy);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
@@ -85,17 +97,31 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
         lock (gate)
         {
             lastFailure = result.Status is StartupStatus.Ready or StartupStatus.Stopped ? null : result;
-            if (lastFailure is not null) { failedAt = clock.GetUtcNow(); }
+            if (lastFailure is not null)
+            {
+                failedAt = clock.GetUtcNow();
+            }
         }
-        log.Write(result.Status switch { StartupStatus.Ready => AgentEvent.Ready, StartupStatus.Stopped => AgentEvent.Stopped, _ => AgentEvent.Failed });
+        log.Write(result.Status switch
+        {
+            StartupStatus.Ready => AgentEvent.Ready,
+            StartupStatus.Stopped => AgentEvent.Stopped,
+            _ => AgentEvent.Failed
+        });
         return result;
     }
 
     private async Task<StartupResult> StopCoreAsync(CancellationToken cancellationToken)
     {
         var state = await runtime.GetAppHostStateAsync(cancellationToken);
-        if (state == AppHostState.Stopped) { return new(StartupStatus.Stopped); }
-        if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new(StartupStatus.AppHostUnavailable); }
+        if (state == AppHostState.Stopped)
+        {
+            return new(StartupStatus.Stopped);
+        }
+        if (state is AppHostState.Unknown or AppHostState.Incompatible)
+        {
+            return new(StartupStatus.AppHostUnavailable);
+        }
         await runtime.StopAppHostAsync(cancellationToken);
         // A successful CLI exit alone does not prove the backend has stopped.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60), clock);
@@ -110,9 +136,15 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
     private async Task<StartupResult> StartAsync(CancellationToken cancellationToken)
     {
         var endpoint = await network.ResolveAsync(cancellationToken);
-        if (await probe.IsReadyAsync(endpoint, cancellationToken)) { return await FinalizeAsync(endpoint, cancellationToken); }
+        if (await probe.IsReadyAsync(endpoint, cancellationToken))
+        {
+            return await FinalizeAsync(endpoint, cancellationToken);
+        }
         var state = await runtime.GetAppHostStateAsync(cancellationToken);
-        if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new StartupResult(StartupStatus.AppHostUnavailable); }
+        if (state is AppHostState.Unknown or AppHostState.Incompatible)
+        {
+            return new StartupResult(StartupStatus.AppHostUnavailable);
+        }
 
         if (!await runtime.IsDockerReadyAsync(cancellationToken))
         {
@@ -129,7 +161,10 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
 
         // Recheck after Docker startup: a manual launch may have happened in the meantime.
         state = await runtime.GetAppHostStateAsync(cancellationToken);
-        if (state is AppHostState.Unknown or AppHostState.Incompatible) { return new StartupResult(StartupStatus.AppHostUnavailable); }
+        if (state is AppHostState.Unknown or AppHostState.Incompatible)
+        {
+            return new StartupResult(StartupStatus.AppHostUnavailable);
+        }
         if (state == AppHostState.Stopped)
         {
             log.Write(AgentEvent.BackendStarting);
@@ -150,7 +185,10 @@ public sealed class StartupCoordinator(ILocalRuntime runtime, ILanNetworkResolve
     private async Task<StartupResult> FinalizeAsync(LanEndpoint endpoint, CancellationToken cancellationToken)
     {
         var current = await network.ResolveAsync(cancellationToken);
-        if (current != endpoint) { return new StartupResult(StartupStatus.NetworkChanged); }
+        if (current != endpoint)
+        {
+            return new StartupResult(StartupStatus.NetworkChanged);
+        }
         var ready = await probe.IsReadyAsync(current, cancellationToken);
         var result = ready ? new StartupResult(StartupStatus.Ready, current.ApiBaseUri) : new StartupResult(StartupStatus.AppHostUnavailable);
         return result;

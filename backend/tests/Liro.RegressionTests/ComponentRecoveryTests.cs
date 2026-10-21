@@ -7,6 +7,7 @@ using Liro.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Liro.RegressionTests;
+
 internal static class ComponentRecoveryTests
 {
     public static void Register(RegressionSuite suite)
@@ -16,7 +17,11 @@ internal static class ComponentRecoveryTests
             Item Make(long id, long creator, CatalogItemType type = CatalogItemType.Asset)
             {
                 var item = new Item(id, "Prueba", itemType: type);
-                item.UpdateDetails(new() { CreatorId = creator, CreatorType = "User" });
+                item.UpdateDetails(new()
+                {
+                    CreatorId = creator,
+                    CreatorType = "User"
+                });
                 return item;
             }
             var official = Make(1, 1, CatalogItemType.Bundle);
@@ -57,5 +62,8 @@ internal static class ComponentRecoveryTests
         });
     }
     private static HttpClient Client(string body, HttpStatusCode status = HttpStatusCode.OK) =>
-        new(new StubHttp(_ => new(status) { Content = new StringContent(body) })) { BaseAddress = new("https://economy.roblox.com/") };
+        new(new StubHttp(_ => new(status) { Content = new StringContent(body) }))
+        {
+            BaseAddress = new("https://economy.roblox.com/")
+        };
 }

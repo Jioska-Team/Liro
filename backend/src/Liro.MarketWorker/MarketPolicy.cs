@@ -5,9 +5,12 @@ namespace Liro.MarketWorker;
 
 public sealed class MarketOptions
 {
-    public bool Enabled { get; set; }
+    public bool Enabled
+    {
+        get; set;
+    }
     public bool DirectFallbackEnabled { get; set; } = true;
-    public int DirectRequestsPerMinute { get; set; } = 2;
+    public int DirectRequestsPerMinute { get; set; } = 1;
     public int RequestsPerMinute { get; set; } = 18;
     public int MaxConcurrentRequests { get; set; } = 5;
     public int VeryActiveMinutes { get; set; } = 2;
@@ -17,10 +20,15 @@ public sealed class MarketOptions
     public int InactiveMinutes { get; set; } = 180;
     public int UncertainMinutes { get; set; } = 30;
     public int MissingHistoryMinutes { get; set; } = 15;
-    public TimeSpan IntervalFor(string activity) => TimeSpan.FromMinutes(activity switch {
-        "MuyAlta" => VeryActiveMinutes, "Alta" => ActiveMinutes, "Media" => NormalMinutes,
-        "InciertaReciente" => UncertainMinutes, "SinHistorial" or "SinDatos" => MissingHistoryMinutes,
-        "Inactiva" or "SinVentasRecientes" => InactiveMinutes, _ => LowMinutes
+    public TimeSpan IntervalFor(string activity) => TimeSpan.FromMinutes(activity switch
+    {
+        "MuyAlta" => VeryActiveMinutes,
+        "Alta" => ActiveMinutes,
+        "Media" => NormalMinutes,
+        "InciertaReciente" => UncertainMinutes,
+        "SinHistorial" or "SinDatos" => MissingHistoryMinutes,
+        "Inactiva" or "SinVentasRecientes" => InactiveMinutes,
+        _ => LowMinutes
     });
     public bool IsValid() => DirectRequestsPerMinute is >= 1 and <= 2
         && RequestsPerMinute is >= 1 and <= 60 && MaxConcurrentRequests is >= 1 and <= 10 && VeryActiveMinutes >= 2
@@ -62,9 +70,11 @@ public sealed record ResaleObservation(decimal? Rap, IReadOnlyList<HistoricalPoi
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
-        if (!root.TryGetProperty("recentAveragePrice", out var rawRap)) throw new JsonException("Falta RAP.");
+        if (!root.TryGetProperty("recentAveragePrice", out var rawRap))
+            throw new JsonException("Falta RAP.");
         var rap = rawRap.ValueKind == JsonValueKind.Null ? (decimal?)null : rawRap.GetDecimal();
-        if (rap is < 0 or > 1_000_000_000_000m) throw new JsonException("RAP inválido.");
+        if (rap is < 0 or > 1_000_000_000_000m)
+            throw new JsonException("RAP inválido.");
         var points = new Dictionary<(string, DateTime), HistoricalPoint>();
         foreach (var (field, metric) in new[] { ("priceDataPoints", "PrecioMedioVenta"), ("volumeDataPoints", "VolumenVentas") })
         {
@@ -75,13 +85,16 @@ public sealed record ResaleObservation(decimal? Rap, IReadOnlyList<HistoricalPoi
                 var date = p.GetProperty("date").GetDateTimeOffset().UtcDateTime;
                 var value = p.GetProperty("value").GetDecimal();
                 if (value < 0 || value > 1_000_000_000_000m || date > now.AddMinutes(5)
-                    || (metric == "VolumenVentas" && decimal.Truncate(value) != value)) throw new JsonException("Punto histórico inválido.");
+                    || (metric == "VolumenVentas" && decimal.Truncate(value) != value))
+                    throw new JsonException("Punto histórico inválido.");
                 var point = new HistoricalPoint(metric, date, value);
-                if (points.TryGetValue((metric, date), out var previous) && previous.Value != value) throw new JsonException("Puntos contradictorios.");
+                if (points.TryGetValue((metric, date), out var previous) && previous.Value != value)
+                    throw new JsonException("Puntos contradictorios.");
                 points[(metric, date)] = point;
             }
         }
-        if (rap is null && points.Count == 0) throw new JsonException("Sin datos de mercado.");
+        if (rap is null && points.Count == 0)
+            throw new JsonException("Sin datos de mercado.");
         return new(rap, points.Values.ToArray(), now);
     }
 
@@ -90,7 +103,8 @@ public sealed record ResaleObservation(decimal? Rap, IReadOnlyList<HistoricalPoi
     {
         var end = ObservedAtUtc.Date;
         var points = Points.Where(p => p.Metric == "VolumenVentas" && p.PeriodUtc >= end.AddDays(-7) && p.PeriodUtc < end).ToArray();
-        if (points.Length != 7 || points.Any(p => p.PeriodUtc != p.PeriodUtc.Date) || points.Select(p => p.PeriodUtc.Date).Distinct().Count() != 7) return null;
+        if (points.Length != 7 || points.Any(p => p.PeriodUtc != p.PeriodUtc.Date) || points.Select(p => p.PeriodUtc.Date).Distinct().Count() != 7)
+            return null;
         return points.Sum(p => p.Value) / 7;
     }
 }

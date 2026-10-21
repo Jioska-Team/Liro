@@ -20,8 +20,14 @@ public sealed record ItemResponse(
         get; init;
     }
     public string ItemType { get; init; } = "Asset";
-    public bool IsBodyPart { get; init; }
-    public bool IsCatalogVisible { get; init; }
+    public bool IsBodyPart
+    {
+        get; init;
+    }
+    public bool IsCatalogVisible
+    {
+        get; init;
+    }
     public int? BundleTypeId
     {
         get; init;

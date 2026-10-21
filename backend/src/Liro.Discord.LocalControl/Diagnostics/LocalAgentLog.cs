@@ -1,6 +1,9 @@
 namespace Liro.Discord.LocalControl.Diagnostics;
 
-public enum AgentEvent { Starting, Connected, Disconnected, Rejected, Ready, DockerStarting, BackendStarting, Failed, Stopped, PanelInstalled, PanelCheckTimedOut, PanelCheckFailed, PanelUpdated, PanelUpdateFailed, BandwidthChecked, BandwidthCheckFailed }
+public enum AgentEvent
+{
+    Starting, Connected, Disconnected, Rejected, Ready, DockerStarting, BackendStarting, Failed, Stopped, PanelInstalled, PanelCheckTimedOut, PanelCheckFailed, PanelUpdated, PanelUpdateFailed, BandwidthChecked, BandwidthCheckFailed, NetworkCheckStarted, NetworkCheckCompleted, NetworkCheckFailed, NetworkCheckTimedOut
+}
 
 // Only fixed event codes are accepted: no exception, URL, command output or token can enter the log.
 public sealed class LocalAgentLog(string localDirectory)
@@ -18,7 +21,10 @@ public sealed class LocalAgentLog(string localDirectory)
                 for (var i = 3; i >= 0; i--)
                 {
                     var source = i == 0 ? path : path + "." + i;
-                    if (File.Exists(source)) { File.Move(source, path + "." + (i + 1), true); }
+                    if (File.Exists(source))
+                    {
+                        File.Move(source, path + "." + (i + 1), true);
+                    }
                 }
             }
             File.AppendAllText(path, $"{DateTimeOffset.UtcNow:O} {code}\n");

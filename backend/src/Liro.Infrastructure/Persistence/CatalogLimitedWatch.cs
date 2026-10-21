@@ -6,11 +6,26 @@ namespace Liro.Infrastructure.Persistence;
 
 public sealed class CatalogLimitedWatch
 {
-    public CatalogItemType ItemType { get; set; }
-    public long ItemId { get; set; }
-    public DateTime AddedAtUtc { get; set; }
-    public DateTime NextCheckAtUtc { get; set; }
-    public DateTime? LastConfirmedAtUtc { get; set; }
+    public CatalogItemType ItemType
+    {
+        get; set;
+    }
+    public long ItemId
+    {
+        get; set;
+    }
+    public DateTime AddedAtUtc
+    {
+        get; set;
+    }
+    public DateTime NextCheckAtUtc
+    {
+        get; set;
+    }
+    public DateTime? LastConfirmedAtUtc
+    {
+        get; set;
+    }
 }
 
 public sealed class CatalogLimitedWatchConfiguration : IEntityTypeConfiguration<CatalogLimitedWatch>

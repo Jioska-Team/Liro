@@ -1,6 +1,7 @@
 using Liro.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Liro.Application.RobloxIntegration;
 
 namespace Liro.MarketWorker;
 
@@ -38,15 +39,19 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                     if (!schemaReady && (await db.Database.GetPendingMigrationsAsync(ct)).Any())
                     {
                         logger.LogWarning("Mercado espera la migración de la base de datos.");
-                        await Task.Delay(TimeSpan.FromSeconds(30), ct); continue;
+                        await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                        continue;
                     }
                     schemaReady = true;
                     var store = new MarketStore(db);
                     if (DateTime.UtcNow >= nextClassification)
                     {
                         await writes.WaitAsync(ct);
-                        try { logger.LogInformation("Clasificación desde historial guardado: {Count} artículos actualizados.",
-                            await store.ReclassifyAsync(DateTime.UtcNow, ct)); }
+                        try
+                        {
+                            logger.LogInformation("Clasificación desde historial guardado: {Count} artículos actualizados.",
+                            await store.ReclassifyAsync(DateTime.UtcNow, ct));
+                        }
                         finally { writes.Release(); }
                         nextClassification = DateTime.UtcNow.AddMinutes(5);
                         nextConnections = DateTime.MinValue;
@@ -60,12 +65,16 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                             try
                             {
                                 var proxy = MarketProxy.Parse(entry);
-                                if (unique.Add(MarketProxy.RouteKey(proxy.Address))) updated.Add((entry.Clave, proxy));
+                                if (unique.Add(MarketProxy.RouteKey(proxy.Address)))
+                                    updated.Add((entry.Clave, proxy));
                             }
                             catch (Exception ex) when (ex is ArgumentException or System.Text.Json.JsonException)
-                            { logger.LogWarning("Configuración inválida en conexión de mercado {Id}; se omite.", entry.Id); }
+                            {
+                                logger.LogWarning("Configuración inválida en conexión de mercado {Id}; se omite.", entry.Id);
+                            }
                         }
-                        if (updated.Count > 32) throw new InvalidOperationException("Demasiadas conexiones.");
+                        if (updated.Count > 32)
+                            throw new InvalidOperationException("Demasiadas conexiones.");
                         connections = updated;
                         schedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct),
                             connections.Sum(x => x.Proxy.RequestsPerMinute));
@@ -77,7 +86,10 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                     if (DateTime.UtcNow >= nextSeed)
                     {
                         await writes.WaitAsync(ct);
-                        try { logger.LogInformation("Seguimientos de mercado incorporados: {Count}.", await store.SeedAsync(ct)); }
+                        try
+                        {
+                            logger.LogInformation("Seguimientos de mercado incorporados: {Count}.", await store.SeedAsync(ct));
+                        }
                         finally { writes.Release(); }
                         nextSeed = DateTime.UtcNow.AddMinutes(5);
                     }
@@ -87,7 +99,8 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                     {
                         logger.LogInformation("Ruta de mercado: {Mode}; respaldo máximo {Budget}/min, subordinado al cupo del catálogo.",
                             useDirect ? "DIRECTA_RESPALDO" : "PROXIES", settings.Value.DirectRequestsPerMinute);
-                        if (useDirect) directSchedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct), settings.Value.DirectRequestsPerMinute);
+                        if (useDirect)
+                            directSchedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct), settings.Value.DirectRequestsPerMinute);
                         previousDirect = useDirect;
                     }
                     if (useDirect)
@@ -99,10 +112,11 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                     // Rotate the first offered lane so a larger pool cannot starve its last routes.
                     for (var i = 0; i < connections.Count; i++)
                     {
-                        var route = connections[(cursor+i)%connections.Count];
+                        var route = connections[(cursor + i) % connections.Count];
                         pool.TryStart(MarketProxy.RouteKey(route.Proxy.Address), () => ProcessAsync(route.Key, route.Proxy, writes, schedule, ct));
                     }
-                    if (connections.Count > 0) cursor = (cursor+1)%connections.Count;
+                    if (connections.Count > 0)
+                        cursor = (cursor + 1) % connections.Count;
                     await Task.Delay(TimeSpan.FromSeconds(1), ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -131,9 +145,18 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                 return;
             }
             await writes.WaitAsync(ct);
-            try { claim = await store.ClaimAsync(ct, selection % 4 == 3, schedule); if (claim is not null) selection = (selection + 1) % 4; }
+            try
+            {
+                claim = await store.ClaimAsync(ct, selection % 4 == 3, schedule);
+                if (claim is not null)
+                    selection = (selection + 1) % 4;
+            }
             finally { writes.Release(); }
-            if (claim is null) { await Task.Delay(TimeSpan.FromSeconds(10), ct); return; }
+            if (claim is null)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), ct);
+                return;
+            }
             ResaleObservation result;
             var retryUntil = DateTime.UtcNow.AddMinutes(2);
             while (true)
@@ -154,11 +177,22 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
             }
             await writes.WaitAsync(ct);
             bool saved;
-            try { saved = await store.SaveAsync(claim, result, schedule, ct); }
+            try
+            {
+                saved = await store.SaveAsync(claim, result, schedule, ct);
+            }
             finally { writes.Release(); }
             logger.LogInformation("Mercado: artículo {ItemId}; guardado {Saved}; puntos históricos {Count}; conexión {Connection}.", claim.ItemId, saved, result.Points.Count, key);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (RobloxRateLimitedException ex)
+        {
+            var delay = ex.RemainingDelay > TimeSpan.Zero ? ex.RemainingDelay : TimeSpan.FromSeconds(1);
+            if (claim is not null)
+                await ReleaseAsync(store, claim, "EsperaIPHTTP429", delay, false, writes, ct);
+            logger.LogInformation("Mercado respeta la pausa compartida de la IP directa; espera {Seconds} segundos.", delay.TotalSeconds);
+            await DelayAsync(delay < TimeSpan.FromSeconds(30) ? delay : TimeSpan.FromSeconds(30), ct);
+        }
         catch (MarketHttpException ex)
         {
             if (claim is not null)
@@ -171,7 +205,8 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         }
         catch (Exception ex)
         {
-            if (claim is not null) await ReleaseAsync(store, claim, "ErrorConsultaOGuardado", TimeSpan.FromMinutes(1), true, writes, ct);
+            if (claim is not null)
+                await ReleaseAsync(store, claim, "ErrorConsultaOGuardado", TimeSpan.FromMinutes(1), true, writes, ct);
             logger.LogWarning("Falló la consulta o guardado de mercado; tipo {Type}; HTTP {HttpStatus}; SQL {SqlState}; datos anteriores conservados.",
                 ex.GetType().Name, (ex as HttpRequestException)?.StatusCode, (ex as Npgsql.PostgresException)?.SqlState);
             await DelayAsync(TimeSpan.FromSeconds(3), ct);
@@ -188,14 +223,23 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         try
         {
             await writes.WaitAsync(ct);
-            try { await store.ReleaseAsync(claim, code, delay, failure, ct); }
+            try
+            {
+                await store.ReleaseAsync(claim, code, delay, failure, ct);
+            }
             finally { writes.Release(); }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception) { logger.LogWarning("No se pudo liberar una reserva de mercado; se conserva hasta su vencimiento."); }
     }
     private static async Task DelayAsync(TimeSpan delay, CancellationToken ct)
-    { try { await Task.Delay(delay, ct); } catch (OperationCanceledException) when (ct.IsCancellationRequested) { } }
+    {
+        try
+        {
+            await Task.Delay(delay, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
 }
 
 

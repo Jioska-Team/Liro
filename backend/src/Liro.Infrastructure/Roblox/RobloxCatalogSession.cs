@@ -29,7 +29,8 @@ public sealed class RobloxCatalogSession(TimeProvider clock, ILogger<RobloxCatal
         long sharedTotal = 0;
         lock (sync)
         {
-            if (!inFlight.TryGetValue(key, out var existing)) inFlight[key] = call = new(action);
+            if (!inFlight.TryGetValue(key, out var existing))
+                inFlight[key] = call = new(action);
             else
             {
                 call = (SharedCall<T>)existing;
@@ -51,14 +52,17 @@ public sealed class RobloxCatalogSession(TimeProvider clock, ILogger<RobloxCatal
             lock (sync)
             {
                 last = --call.Users == 0;
-                if (last) inFlight.Remove(key);
+                if (last)
+                    inFlight.Remove(key);
             }
             if (last)
             {
-                if (work is null) call.Cancellation.Dispose();
+                if (work is null)
+                    call.Cancellation.Dispose();
                 else
                 {
-                    if (!work.IsCompleted) call.Cancellation.Cancel();
+                    if (!work.IsCompleted)
+                        call.Cancellation.Cancel();
                     _ = work.ContinueWith(done => { _ = done.Exception; call.Cancellation.Dispose(); },
                         CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 }
@@ -76,25 +80,32 @@ public sealed class RobloxCatalogSession(TimeProvider clock, ILogger<RobloxCatal
             throw new ArgumentOutOfRangeException(nameof(maximumAge));
         lock (sync)
         {
-            if (!recent.TryGetValue(key, out var item)) return null;
+            if (!recent.TryGetValue(key, out var item))
+                return null;
             var age = clock.GetUtcNow().UtcDateTime - item.ObservedAtUtc;
-            if (age >= TimeSpan.Zero && age < maximumAge) return item;
-            if (age < TimeSpan.Zero || age >= TimeSpan.FromMinutes(1)) recent.Remove(key);
+            if (age >= TimeSpan.Zero && age < maximumAge)
+                return item;
+            if (age < TimeSpan.Zero || age >= TimeSpan.FromMinutes(1))
+                recent.Remove(key);
             return null;
         }
     }
     public void Store(RobloxCatalogItem item)
     {
-        if (item.Details?.CreatorId is not > 0 || item.Details.CreatorType is not ("User" or "Group")) return;
+        if (item.Details?.CreatorId is not > 0 || item.Details.CreatorType is not ("User" or "Group"))
+            return;
         lock (sync)
         {
             var key = new CatalogItemKey(item.AssetId, item.ItemType);
-            if (recent.TryGetValue(key, out var previous) && previous.ObservedAtUtc >= item.ObservedAtUtc) return;
+            if (recent.TryGetValue(key, out var previous) && previous.ObservedAtUtc >= item.ObservedAtUtc)
+                return;
             if (recent.Count >= 5000)
             {
                 var cutoff = clock.GetUtcNow().UtcDateTime.AddMinutes(-1);
-                foreach (var stale in recent.Where(x => x.Value.ObservedAtUtc <= cutoff).Select(x => x.Key).ToArray()) recent.Remove(stale);
-                if (recent.Count >= 5000) recent.Remove(recent.MinBy(x => x.Value.ObservedAtUtc).Key);
+                foreach (var stale in recent.Where(x => x.Value.ObservedAtUtc <= cutoff).Select(x => x.Key).ToArray())
+                    recent.Remove(stale);
+                if (recent.Count >= 5000)
+                    recent.Remove(recent.MinBy(x => x.Value.ObservedAtUtc).Key);
             }
             recent[key] = item;
         }

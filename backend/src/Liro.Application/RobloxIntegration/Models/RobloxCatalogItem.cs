@@ -7,7 +7,10 @@ public sealed record RobloxCatalogItem(long AssetId, string Name, Guid? Collecti
 {
     public CatalogItemType ItemType { get; init; } = CatalogItemType.Asset;
     // Null means not supplied; an empty list means a confirmed empty bundle.
-    public IReadOnlyList<long>? BundleComponentAssetIds { get; init; }
+    public IReadOnlyList<long>? BundleComponentAssetIds
+    {
+        get; init;
+    }
     public ItemCatalogDetails? Details
     {
         get; init;

@@ -23,12 +23,21 @@ internal static class BoundaryTests
             {
                 var reply = new ReplyFake();
                 var accepted = await handler.AcknowledgeAsync(request, reply);
-                if (accepted || reply.Deferred || !reply.Denied || startup.Calls != 0) { throw new Exception("Unauthorized interaction reached startup"); }
+                if (accepted || reply.Deferred || !reply.Denied || startup.Calls != 0)
+                {
+                    throw new Exception("Unauthorized interaction reached startup");
+                }
             }
             var allowed = new ReplyFake();
-            if (!await handler.AcknowledgeAsync(valid, allowed) || !allowed.Deferred || startup.Calls != 0) { throw new Exception("Deferral must precede startup"); }
+            if (!await handler.AcknowledgeAsync(valid, allowed) || !allowed.Deferred || startup.Calls != 0)
+            {
+                throw new Exception("Deferral must precede startup");
+            }
             await handler.CompleteAsync(allowed, default);
-            if (startup.Calls != 1 || !allowed.Message.Contains("http://192.168.50.10:5205/")) { throw new Exception("Ready result not delivered"); }
+            if (startup.Calls != 1 || !allowed.Message.Contains("http://192.168.50.10:5205/"))
+            {
+                throw new Exception("Ready result not delivered");
+            }
         });
         foreach (var entry in new[]
         {
@@ -43,7 +52,10 @@ internal static class BoundaryTests
             {
                 using var client = new HttpClient(new ResponseHandler(entry.Item1, entry.Item2));
                 var ready = await new LiroReadinessProbe(client).IsReadyAsync(new LanEndpoint(new Uri("http://192.168.50.10:5205"), "192.168.50.10", 24, 1), default);
-                if (ready != entry.Item3) { throw new Exception("Invalid readiness acceptance"); }
+                if (ready != entry.Item3)
+                {
+                    throw new Exception("Invalid readiness acceptance");
+                }
             });
         }
         suite.AsyncTest("Remote Docker context cannot trigger remote info requests", async () =>
@@ -58,10 +70,20 @@ internal static class BoundaryTests
                 var commands = new CommandsFake();
                 var runtime = new LocalRuntime(new AgentOptions { DockerDesktopPath = desktop }, commands);
                 var rejected = false;
-                try { await runtime.IsDockerReadyAsync(default); } catch (InvalidOperationException) { rejected = true; }
-                if (!rejected || commands.Calls != 1) { throw new Exception("Remote Docker endpoint was contacted"); }
+                try
+                {
+                    await runtime.IsDockerReadyAsync(default);
+                }
+                catch (InvalidOperationException) { rejected = true; }
+                if (!rejected || commands.Calls != 1)
+                {
+                    throw new Exception("Remote Docker endpoint was contacted");
+                }
                 var warmingUp = new LocalRuntime(new AgentOptions { DockerDesktopPath = desktop }, new WarmingDocker());
-                if (await warmingUp.IsDockerReadyAsync(default)) { throw new Exception("Timed-out engine was considered ready"); }
+                if (await warmingUp.IsDockerReadyAsync(default))
+                {
+                    throw new Exception("Timed-out engine was considered ready");
+                }
             }
             finally { Directory.Delete(folder, true); }
         });
@@ -73,8 +95,15 @@ internal static class BoundaryTests
                 using (var first = new AgentInstance(folder))
                 {
                     var rejected = false;
-                    try { using var second = new AgentInstance(folder); } catch (IOException) { rejected = true; }
-                    if (!rejected) { throw new Exception("Second agent acquired lease"); }
+                    try
+                    {
+                        using var second = new AgentInstance(folder);
+                    }
+                    catch (IOException) { rejected = true; }
+                    if (!rejected)
+                    {
+                        throw new Exception("Second agent acquired lease");
+                    }
                 }
                 using var recovered = new AgentInstance(folder);
             }
@@ -92,7 +121,10 @@ internal static class BoundaryTests
                     File.WriteAllBytes(Path.Combine(folder, "agent.log"), new byte[2 * 1024 * 1024]);
                     logger.Write(AgentEvent.Ready);
                 }
-                if (Directory.GetFiles(folder).Length != 5 || !File.ReadAllText(Path.Combine(folder, "agent.log")).Contains("Ready")) { throw new Exception("Log rotation budget violated"); }
+                if (Directory.GetFiles(folder).Length != 5 || !File.ReadAllText(Path.Combine(folder, "agent.log")).Contains("Ready"))
+                {
+                    throw new Exception("Log rotation budget violated");
+                }
             }
             finally { Directory.Delete(folder, true); }
         });
@@ -105,15 +137,31 @@ internal static class BoundaryTests
         public Task<StartupResult> RestartAsync(CancellationToken token) => EnsureReadyAsync(token);
         public Task<StartupResult> StopAsync(CancellationToken token) => Task.FromResult(new StartupResult(StartupStatus.Stopped));
         public Task<StartupResult> GetStatusAsync(CancellationToken token) => Task.FromResult(new StartupResult(StartupStatus.Unknown));
-        public Task<StartupResult> EnsureReadyAsync(CancellationToken token) { Calls++; return Task.FromResult(new StartupResult(StartupStatus.Ready, new Uri("http://192.168.50.10:5205/"))); }
+        public Task<StartupResult> EnsureReadyAsync(CancellationToken token)
+        {
+            Calls++;
+            return Task.FromResult(new StartupResult(StartupStatus.Ready, new Uri("http://192.168.50.10:5205/")));
+        }
     }
     private sealed class ReplyFake : IButtonReply
     {
         public bool Deferred, Denied;
         public string Message = "";
-        public Task DeferAsync() { Deferred = true; return Task.CompletedTask; }
-        public Task DenyAsync() { Denied = true; return Task.CompletedTask; }
-        public Task CompleteAsync(string message) { Message = message; return Task.CompletedTask; }
+        public Task DeferAsync()
+        {
+            Deferred = true;
+            return Task.CompletedTask;
+        }
+        public Task DenyAsync()
+        {
+            Denied = true;
+            return Task.CompletedTask;
+        }
+        public Task CompleteAsync(string message)
+        {
+            Message = message;
+            return Task.CompletedTask;
+        }
     }
     private sealed class ResponseHandler(HttpStatusCode status, string body) : HttpMessageHandler
     {
@@ -135,7 +183,10 @@ internal static class BoundaryTests
     {
         public Task<CommandResult> RunAsync(string executable, IReadOnlyList<string> arguments, CancellationToken token)
         {
-            if (arguments[0] == "context") { return Task.FromResult(new CommandResult(0, "\"npipe:////./pipe/dockerDesktopLinuxEngine\"")); }
+            if (arguments[0] == "context")
+            {
+                return Task.FromResult(new CommandResult(0, "\"npipe:////./pipe/dockerDesktopLinuxEngine\""));
+            }
             throw new OperationCanceledException("Local command timed out while the motor warms up");
         }
     }

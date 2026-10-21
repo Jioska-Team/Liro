@@ -20,6 +20,13 @@ public sealed class AdminAuthenticationHandler(IOptionsMonitor<AdminAuthenticati
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
+        // Anonymous public requests, including the Discord readiness probe, have no credentials to authenticate.
+        // Authorization still challenges anonymous callers on administrative endpoints.
+        if (!Request.Headers.ContainsKey("X-Liro-Admin-Key"))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
         if (!Request.IsHttps)
         {
             return Task.FromResult(AuthenticateResult.Fail("Administrative requests require HTTPS."));

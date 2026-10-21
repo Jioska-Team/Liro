@@ -66,7 +66,8 @@ internal static class MarketTrackingTests
             using var provider = new ServiceCollection().BuildServiceProvider();
             using var service = new MarketWorkerService(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(new MarketOptions()), null!, NullLogger<MarketWorkerService>.Instance);
             await service.StartAsync(default);
-            if (service.ExecuteTask is { } task) await task.WaitAsync(TimeSpan.FromSeconds(2));
+            if (service.ExecuteTask is { } task)
+                await task.WaitAsync(TimeSpan.FromSeconds(2));
             await service.StopAsync(default);
         });
         suite.Test("Modelo de mercado conserva unicidad e historial separado", () =>
@@ -80,40 +81,49 @@ internal static class MarketTrackingTests
         {
             var population = new List<MarketPopulation> { new() { Activity="MuyAlta", Count=9 }, new() { Activity="Alta", Count=81 },
                 new() { Activity="Media", Count=132 }, new() { Activity="SinDatos", Count=2332 } };
-            var plan = MarketSchedulePlan.Build(new() { RequestsPerMinute=30 }, population, 30);
-            Check.That(plan.VeryActiveMinutes==2 && plan.ActiveMinutes==6, "No ajusta los objetivos al cupo activo");
-            var demand=9d/plan.VeryActiveMinutes+81d/plan.ActiveMinutes+132d/plan.NormalMinutes+2332d/plan.MissingHistoryMinutes;
-            Check.That(demand<=27 && plan.RequestsPerMinute==30, "La frecuencia exige más capacidad que la disponible");
-            var reduced=MarketSchedulePlan.Build(new() { RequestsPerMinute=30 }, population, 6);
-            Check.That(9d/reduced.VeryActiveMinutes+81d/reduced.ActiveMinutes+132d/reduced.NormalMinutes+2332d/reduced.MissingHistoryMinutes<=5.4,
+            var plan = MarketSchedulePlan.Build(new()
+            {
+                RequestsPerMinute = 30
+            }, population, 30);
+            Check.That(plan.VeryActiveMinutes == 2 && plan.ActiveMinutes == 6, "No ajusta los objetivos al cupo activo");
+            var demand = 9d / plan.VeryActiveMinutes + 81d / plan.ActiveMinutes + 132d / plan.NormalMinutes + 2332d / plan.MissingHistoryMinutes;
+            Check.That(demand <= 27 && plan.RequestsPerMinute == 30, "La frecuencia exige más capacidad que la disponible");
+            var reduced = MarketSchedulePlan.Build(new()
+            {
+                RequestsPerMinute = 30
+            }, population, 6);
+            Check.That(9d / reduced.VeryActiveMinutes + 81d / reduced.ActiveMinutes + 132d / reduced.NormalMinutes + 2332d / reduced.MissingHistoryMinutes <= 5.4,
                 "No ajusta frecuencias cuando quedan menos proxies");
-            var empty=MarketSchedulePlan.Build(new(), [], 0);
-            Check.That(empty.VeryActiveMinutes>=2 && empty.ActiveMinutes>=3, "Plan vacío inválido");
+            var empty = MarketSchedulePlan.Build(new(), [], 0);
+            Check.That(empty.VeryActiveMinutes >= 2 && empty.ActiveMinutes >= 3, "Plan vacío inválido");
         });
         suite.Test("Clasificación parcial prueba actividad sin inventar ventas ni promedios", () =>
         {
-            foreach(var (sales, expected) in new[] { (69m,"Media"),(70m,"Alta"),(699m,"Alta"),(700m,"MuyAlta") })
+            foreach (var (sales, expected) in new[] { (69m, "Media"), (70m, "Alta"), (699m, "Alta"), (700m, "MuyAlta") })
             {
-                var e=new MarketActivityEvidence {CompletedDays=6,WeeklySales=sales,HasRecent=true,HasHistory=true};
-                Check.That(e.Activity==expected && e.ExactDailySales is null, "Clasificación parcial o promedio incorrecto");
+                var e = new MarketActivityEvidence { CompletedDays = 6, WeeklySales = sales, HasRecent = true, HasHistory = true };
+                Check.That(e.Activity == expected && e.ExactDailySales is null, "Clasificación parcial o promedio incorrecto");
             }
-            Check.That(new MarketActivityEvidence {CompletedDays=1,WeeklySales=3,HasRecent=true,HasHistory=true}.Activity=="InciertaReciente", "Oculta incertidumbre reciente");
-            Check.That(new MarketActivityEvidence {HasHistory=true}.Activity=="SinVentasRecientes", "Confunde historial antiguo con ausencia de historial");
-            Check.That(new MarketActivityEvidence().Activity=="SinHistorial", "No distingue ausencia de historial");
-            Check.That(new MarketActivityEvidence {CompletedDays=6,HasRecent=true,HasHistory=true}.Activity=="InciertaReciente", "Inventa inactividad a partir de días faltantes");
-            var full=new MarketActivityEvidence {CompletedDays=7,WeeklySales=0,HasRecent=true,HasHistory=true};
-            Check.That(full.Activity=="Inactiva" && full.ExactDailySales==0, "Ignora siete ceros explícitos");
+            Check.That(new MarketActivityEvidence { CompletedDays = 1, WeeklySales = 3, HasRecent = true, HasHistory = true }.Activity == "InciertaReciente", "Oculta incertidumbre reciente");
+            Check.That(new MarketActivityEvidence { HasHistory = true }.Activity == "SinVentasRecientes", "Confunde historial antiguo con ausencia de historial");
+            Check.That(new MarketActivityEvidence().Activity == "SinHistorial", "No distingue ausencia de historial");
+            Check.That(new MarketActivityEvidence { CompletedDays = 6, HasRecent = true, HasHistory = true }.Activity == "InciertaReciente", "Inventa inactividad a partir de días faltantes");
+            var full = new MarketActivityEvidence { CompletedDays = 7, WeeklySales = 0, HasRecent = true, HasHistory = true };
+            Check.That(full.Activity == "Inactiva" && full.ExactDailySales == 0, "Ignora siete ceros explícitos");
         });
         suite.Test("Plan incluye inciertos y mantiene el presupuesto con historial parcial", () =>
         {
-            var plan=MarketSchedulePlan.Build(new() {RequestsPerMinute=30},[
+            var plan = MarketSchedulePlan.Build(new()
+            {
+                RequestsPerMinute = 30
+            }, [
                 new() {Activity="MuyAlta",Count=9},new() {Activity="Alta",Count=84},new() {Activity="Media",Count=380},
                 new() {Activity="InciertaReciente",Count=906},new() {Activity="SinHistorial",Count=57},new() {Activity="SinVentasRecientes",Count=1118}
-            ],30);
-            var demand=9d/plan.VeryActiveMinutes+84d/plan.ActiveMinutes+380d/plan.NormalMinutes+
-                906d/plan.UncertainMinutes+57d/plan.MissingHistoryMinutes+1118d/plan.InactiveMinutes;
-            Check.That(demand<=27 && plan.VeryActiveMinutes==2 && plan.ActiveMinutes==6, "Excede cupo o desplaza activos");
-            Check.That(plan.MissingHistoryMinutes<plan.UncertainMinutes && plan.UncertainMinutes<plan.InactiveMinutes,
+            ], 30);
+            var demand = 9d / plan.VeryActiveMinutes + 84d / plan.ActiveMinutes + 380d / plan.NormalMinutes +
+                906d / plan.UncertainMinutes + 57d / plan.MissingHistoryMinutes + 1118d / plan.InactiveMinutes;
+            Check.That(demand <= 27 && plan.VeryActiveMinutes == 2 && plan.ActiveMinutes == 6, "Excede cupo o desplaza activos");
+            Check.That(plan.MissingHistoryMinutes < plan.UncertainMinutes && plan.UncertainMinutes < plan.InactiveMinutes,
                 "No prioriza la comprobación incierta frente al historial antiguo");
         });
         RegisterDatabase(suite);
@@ -123,11 +133,10 @@ internal static class MarketTrackingTests
 
     private static void RegisterDatabase(RegressionSuite suite)
     {
-        var connection = Environment.GetEnvironmentVariable("LIRO_TEST_POSTGRES");
-        if (string.IsNullOrWhiteSpace(connection)) return;
+        var connection = IntegrationPrerequisites.RequireConnection("LIRO_TEST_POSTGRES");
         suite.AsyncTest("Mercado reserva sin duplicar y guarda historial idempotente en PostgreSQL", async () =>
         {
-            var probe=new PersistenceOptimizationTests.CommandProbe();
+            var probe = new PersistenceOptimizationTests.CommandProbe();
             await using var db = new LiroDbContext(new DbContextOptionsBuilder<LiroDbContext>().UseNpgsql(connection).AddInterceptors(probe).Options);
             await db.Database.OpenConnectionAsync();
             // Temporary session tables only; no production data or schema changes.
@@ -141,7 +150,8 @@ internal static class MarketTrackingTests
                     "Value" numeric, "ObservedAtUtc" timestamptz, PRIMARY KEY ("ItemId","Source","Metric","PeriodUtc"));
                 CREATE TEMP TABLE "MarketRapSnapshots" ("ItemId" uuid, "ObservedAtUtc" timestamptz, "Value" numeric, PRIMARY KEY ("ItemId","ObservedAtUtc"));
                 """);
-            var item = Guid.NewGuid(); var collectible = Guid.NewGuid();
+            var item = Guid.NewGuid();
+            var collectible = Guid.NewGuid();
             await db.Database.ExecuteSqlInterpolatedAsync($"""INSERT INTO "Items" VALUES ({item},1,'User','Limited',{collectible})""");
             var store = new MarketStore(db);
             Check.That(await store.SeedAsync(default) == 1 && await store.SeedAsync(default) == 0, "Duplica seguimiento");
@@ -150,57 +160,61 @@ internal static class MarketTrackingTests
             var originalDue = (await db.Set<MarketWatch>().AsNoTracking().SingleAsync()).NextCheckAtUtc;
             await store.ReleaseAsync(claim, "CupoMercado", TimeSpan.FromMinutes(1), false, default);
             var deferred = await db.Set<MarketWatch>().AsNoTracking().SingleAsync();
-            Check.That(deferred.NextCheckAtUtc==originalDue && deferred.LeaseUntilUtc>DateTime.UtcNow && deferred.ConsecutiveFailures==0,
+            Check.That(deferred.NextCheckAtUtc == originalDue && deferred.LeaseUntilUtc > DateTime.UtcNow && deferred.ConsecutiveFailures == 0,
                 "La falta de cupo perdió prioridad o contó como error");
             Check.That(await store.ClaimAsync(default) is null, "Ignora la espera independiente del cupo");
             await db.Database.ExecuteSqlRawAsync("UPDATE \"MarketWatches\" SET \"LeaseUntilUtc\"=NULL");
-            claim=(await store.ClaimAsync(default))!;
+            claim = (await store.ClaimAsync(default))!;
             var observation = new ResaleObservation(123m, [new("PrecioMedioVenta", Now.Date, 120), new("VolumenVentas", Now.Date, 3)], DateTime.UtcNow);
-            var historyWrites=probe.HistoryWrites;
+            var historyWrites = probe.HistoryWrites;
             Check.That(await store.SaveAsync(claim, observation, new(), default), "No guardó observación");
-            Check.That(probe.HistoryWrites==historyWrites+1,"No agrupa precio y volumen en una sola operación");
+            Check.That(probe.HistoryWrites == historyWrites + 1, "No agrupa precio y volumen en una sola operación");
             db.ChangeTracker.Clear();
             Check.That(!await store.SaveAsync(claim, observation, new(), default), "Una reserva obsoleta pudo guardar");
             await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "NextCheckAtUtc"=NOW() WHERE "ItemId"={item}""");
             var second = (await store.ClaimAsync(default))!;
-            Check.That(await store.SaveAsync(second, observation with { ObservedAtUtc = DateTime.UtcNow }, new(), default), "No pudo repetir observación");
+            Check.That(await store.SaveAsync(second, observation with
+            {
+                ObservedAtUtc = DateTime.UtcNow
+            }, new(), default), "No pudo repetir observación");
             db.ChangeTracker.Clear();
             Check.That(await db.Set<MarketHistoryPoint>().CountAsync() == 2 && await db.Set<MarketRapSnapshot>().CountAsync() == 1, "Duplicó historia o RAP sin cambio");
-            Check.That(!await db.Set<MarketHistoryPoint>().AnyAsync(p=>p.ObservedAtUtc>observation.ObservedAtUtc),"Reescribe la fecha histórica sin cambio de valor");
+            Check.That(!await db.Set<MarketHistoryPoint>().AnyAsync(p => p.ObservedAtUtc > observation.ObservedAtUtc), "Reescribe la fecha histórica sin cambio de valor");
             await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "NextCheckAtUtc"=NOW() WHERE "ItemId"={item}""");
             var third = (await store.ClaimAsync(default))!;
             await store.ReleaseAsync(third, "HTTP429", TimeSpan.FromMinutes(12), false, default);
             var after = await db.Set<MarketWatch>().AsNoTracking().SingleAsync();
             Check.That(after.RecentAveragePrice == 123 && after.ConsecutiveFailures == 0 && after.NextCheckAtUtc > DateTime.UtcNow.AddMinutes(11), "El límite destruyó datos o ignoró espera");
-            var hot=Guid.NewGuid(); var cold=Guid.NewGuid();
+            var hot = Guid.NewGuid();
+            var cold = Guid.NewGuid();
             await db.Database.ExecuteSqlInterpolatedAsync($"""INSERT INTO "Items" VALUES ({hot},1,'User','Limited',{Guid.NewGuid()}),({cold},1,'User','Limited',{Guid.NewGuid()})""");
             await store.SeedAsync(default);
             await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "Activity"='MuyAlta', "LastSuccessAtUtc"=NOW()-INTERVAL '3 minutes', "NextCheckAtUtc"=NOW()+INTERVAL '1 hour' WHERE "ItemId"={hot}""");
             await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "NextCheckAtUtc"=NOW()-INTERVAL '1 day' WHERE "ItemId"={cold}""");
-            var prioritized=(await store.ClaimAsync(default, false, new()))!;
-            Check.That(prioritized.ItemId==hot, "El atraso general desplaza al activo o ignora la frecuencia efectiva");
-            await store.ReleaseAsync(prioritized,"CupoConexion",TimeSpan.Zero,false,default);
-            var background=(await store.ClaimAsync(default,true,new()))!;
-            Check.That(background.ItemId==cold, "La cuota de fondo no avanza con activos pendientes");
-            var hotAgain=(await store.ClaimAsync(default,false,new()))!;
-            Check.That(hotAgain.ItemId==hot, "La espera por cupo perdió el turno activo");
-            await store.ReleaseAsync(hotAgain,"CupoConexion",TimeSpan.Zero,false,default);
-            await store.ReleaseAsync(background,"CupoConexion",TimeSpan.Zero,false,default);
-            var historyDay=DateTime.UtcNow.Date;
-            for(var day=1;day<=6;day++)
-                await db.Database.ExecuteSqlInterpolatedAsync($"""INSERT INTO "MarketHistoryPoints" VALUES ({hot},'marketplace-sales','VolumenVentas',{historyDay.AddDays(-day)},{(day==1?93m:0m)},{DateTime.UtcNow})""");
-            var beforeRetry=after.NextCheckAtUtc;
-            Check.That(await store.ReclassifyAsync(DateTime.UtcNow,default)>0, "No reclasifica el historial existente");
-            var classified=await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x=>x.ItemId==hot);
-            Check.That(classified.Activity=="Alta" && classified.DailySales is null, "Pierde las 93 ventas o publica un promedio incompleto");
-            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x=>x.ItemId==cold)).Activity=="SinHistorial", "No separa el historial ausente");
-            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x=>x.ItemId==item)).NextCheckAtUtc==beforeRetry, "La reclasificación ignora la espera del proveedor");
-            Check.That(await store.ReclassifyAsync(DateTime.UtcNow,default)==0, "Reescribe datos sin cambios");
-            var storedClaim=(await store.ClaimAsync(default,false,new()))!;
-            Check.That(storedClaim.ItemId==hot, "No prioriza el activo reclasificado");
-            Check.That(await store.SaveAsync(storedClaim,new ResaleObservation(130,[],DateTime.UtcNow),new(),default), "No guarda respuesta parcial");
+            var prioritized = (await store.ClaimAsync(default, false, new()))!;
+            Check.That(prioritized.ItemId == hot, "El atraso general desplaza al activo o ignora la frecuencia efectiva");
+            await store.ReleaseAsync(prioritized, "CupoConexion", TimeSpan.Zero, false, default);
+            var background = (await store.ClaimAsync(default, true, new()))!;
+            Check.That(background.ItemId == cold, "La cuota de fondo no avanza con activos pendientes");
+            var hotAgain = (await store.ClaimAsync(default, false, new()))!;
+            Check.That(hotAgain.ItemId == hot, "La espera por cupo perdió el turno activo");
+            await store.ReleaseAsync(hotAgain, "CupoConexion", TimeSpan.Zero, false, default);
+            await store.ReleaseAsync(background, "CupoConexion", TimeSpan.Zero, false, default);
+            var historyDay = DateTime.UtcNow.Date;
+            for (var day = 1; day <= 6; day++)
+                await db.Database.ExecuteSqlInterpolatedAsync($"""INSERT INTO "MarketHistoryPoints" VALUES ({hot},'marketplace-sales','VolumenVentas',{historyDay.AddDays(-day)},{(day == 1 ? 93m : 0m)},{DateTime.UtcNow})""");
+            var beforeRetry = after.NextCheckAtUtc;
+            Check.That(await store.ReclassifyAsync(DateTime.UtcNow, default) > 0, "No reclasifica el historial existente");
+            var classified = await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x => x.ItemId == hot);
+            Check.That(classified.Activity == "Alta" && classified.DailySales is null, "Pierde las 93 ventas o publica un promedio incompleto");
+            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x => x.ItemId == cold)).Activity == "SinHistorial", "No separa el historial ausente");
+            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x => x.ItemId == item)).NextCheckAtUtc == beforeRetry, "La reclasificación ignora la espera del proveedor");
+            Check.That(await store.ReclassifyAsync(DateTime.UtcNow, default) == 0, "Reescribe datos sin cambios");
+            var storedClaim = (await store.ClaimAsync(default, false, new()))!;
+            Check.That(storedClaim.ItemId == hot, "No prioriza el activo reclasificado");
+            Check.That(await store.SaveAsync(storedClaim, new ResaleObservation(130, [], DateTime.UtcNow), new(), default), "No guarda respuesta parcial");
             db.ChangeTracker.Clear();
-            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x=>x.ItemId==hot)).Activity=="Alta", "Una respuesta parcial borró la clasificación basada en historial guardado");
+            Check.That((await db.Set<MarketWatch>().AsNoTracking().SingleAsync(x => x.ItemId == hot)).Activity == "Alta", "Una respuesta parcial borró la clasificación basada en historial guardado");
 
 
         });

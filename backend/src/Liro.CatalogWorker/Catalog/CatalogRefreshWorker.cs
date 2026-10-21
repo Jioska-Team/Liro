@@ -30,7 +30,8 @@ public sealed class CatalogRefreshWorker(IServiceScopeFactory scopeFactory, ILog
                         health.Pending, health.OldestDetectedAtUtc, health.Overdue, health.OldestDueAtUtc);
                     nextMetricsAt = now.AddMinutes(1);
                 }
-                if (processed == 0) await Task.Delay(options.RefreshIdleDelay, stoppingToken);
+                if (processed == 0)
+                    await Task.Delay(options.RefreshIdleDelay, stoppingToken);
                 continue;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

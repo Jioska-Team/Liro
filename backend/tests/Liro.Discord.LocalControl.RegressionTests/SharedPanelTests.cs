@@ -25,7 +25,9 @@ internal static class SharedPanelTests
         });
         suite.AsyncTest("Panel compartido refleja cambios y renueva comprobación sin mensajes nuevos", async () =>
         {
-            var clock = new ManualClock(); var coordinator = new Coordinator(); var contents = new List<string>();
+            var clock = new ManualClock();
+            var coordinator = new Coordinator();
+            var contents = new List<string>();
             var panel = new BackendPanelUpdater(coordinator, clock, (text, _) => { contents.Add(text); return Task.CompletedTask; });
             await panel.RefreshAsync(default);
             await panel.RefreshAsync(default);
@@ -41,13 +43,19 @@ internal static class SharedPanelTests
         });
         suite.AsyncTest("Panel reintenta edición fallida y serializa comprobaciones", async () =>
         {
-            var coordinator = new Coordinator(); var attempts = 0;
+            var coordinator = new Coordinator();
+            var attempts = 0;
             var panel = new BackendPanelUpdater(coordinator, TimeProvider.System, (_, _) =>
             {
-                if (++attempts == 1) throw new InvalidOperationException("Fallo simulado");
+                if (++attempts == 1)
+                    throw new InvalidOperationException("Fallo simulado");
                 return Task.CompletedTask;
             });
-            try { await panel.RefreshAsync(default); } catch (InvalidOperationException) { }
+            try
+            {
+                await panel.RefreshAsync(default);
+            }
+            catch (InvalidOperationException) { }
             await Task.WhenAll(panel.RefreshAsync(default), panel.RefreshAsync(default));
             Check(attempts == 2, "Edición fallida se dio por publicada o se duplicó");
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -73,7 +81,8 @@ internal static class SharedPanelTests
             var published = new List<string>();
             var panel = new BackendPanelUpdater(coordinator, TimeProvider.System, (text, _) =>
             {
-                published.Add(text); return Task.CompletedTask;
+                published.Add(text);
+                return Task.CompletedTask;
             });
             await panel.RefreshAsync(default);
             coordinator.ThrowStatus = true;
@@ -118,7 +127,8 @@ internal static class SharedPanelTests
             var operation = handler.CompleteAsync(InteractionHandler.ButtonId, reply, default, 7, _ =>
             {
                 states.Add(coordinator.State);
-                if (states.Count == 1) throw new InvalidOperationException("Discord no disponible");
+                if (states.Count == 1)
+                    throw new InvalidOperationException("Discord no disponible");
                 return Task.CompletedTask;
             });
             Check(states.SequenceEqual(new[] { StartupStatus.Restarting }) && !operation.IsCompleted, "No publicó transición");
@@ -129,7 +139,11 @@ internal static class SharedPanelTests
         });
     }
 
-    private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
+    private static void Check(bool value, string message)
+    {
+        if (!value)
+            throw new Exception(message);
+    }
     private static LocalAgentLog Log() => new(Path.Combine(AppContext.BaseDirectory, "test-logs"));
     private sealed class Coordinator : IStartupCoordinator
     {
@@ -139,11 +153,19 @@ internal static class SharedPanelTests
         public Task<StartupResult> EnsureReadyAsync(CancellationToken token) => throw new NotSupportedException();
         public Task<StartupResult> RestartAsync(CancellationToken token)
         {
-            if (DeferredRestart is not null) { State = StartupStatus.Restarting; return DeferredRestart.Task; }
+            if (DeferredRestart is not null)
+            {
+                State = StartupStatus.Restarting;
+                return DeferredRestart.Task;
+            }
             State = StartupStatus.Ready;
             return Task.FromResult(new StartupResult(State, new Uri("http://192.168.1.2:5205/")));
         }
-        public Task<StartupResult> StopAsync(CancellationToken token) { State = StartupStatus.Stopped; return Task.FromResult(new StartupResult(State)); }
+        public Task<StartupResult> StopAsync(CancellationToken token)
+        {
+            State = StartupStatus.Stopped;
+            return Task.FromResult(new StartupResult(State));
+        }
         public Task<StartupResult> GetStatusAsync(CancellationToken token) => ThrowStatus
             ? throw new InvalidOperationException("Comprobación fallida") : Task.FromResult(new StartupResult(State));
     }
@@ -153,7 +175,8 @@ internal static class SharedPanelTests
         public Task<Uri?> GetLoginAsync(CancellationToken token)
         {
             Calls++;
-            if (Fail) throw new Exception("privateTestToken");
+            if (Fail)
+                throw new Exception("privateTestToken");
             return Task.FromResult<Uri?>(new Uri("https://localhost:17172/login?t=privateTestToken"));
         }
     }
@@ -162,6 +185,10 @@ internal static class SharedPanelTests
         public string Text = "";
         public Task DeferAsync() => Task.CompletedTask;
         public Task DenyAsync() => Task.CompletedTask;
-        public Task CompleteAsync(string message) { Text = message; return Task.CompletedTask; }
+        public Task CompleteAsync(string message)
+        {
+            Text = message;
+            return Task.CompletedTask;
+        }
     }
 }

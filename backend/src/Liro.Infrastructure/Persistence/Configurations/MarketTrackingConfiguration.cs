@@ -25,7 +25,8 @@ public sealed class MarketWatchConfiguration : IEntityTypeConfiguration<MarketWa
 {
     public void Configure(EntityTypeBuilder<MarketWatch> b)
     {
-        b.ToTable("MarketWatches"); b.HasKey(x => x.ItemId);
+        b.ToTable("MarketWatches");
+        b.HasKey(x => x.ItemId);
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
         b.Property(x => x.RecentAveragePrice).HasPrecision(28, 6);
         b.Property(x => x.DailySales).HasPrecision(28, 6);
@@ -38,9 +39,11 @@ public sealed class MarketHistoryConfiguration : IEntityTypeConfiguration<Market
 {
     public void Configure(EntityTypeBuilder<MarketHistoryPoint> b)
     {
-        b.ToTable("MarketHistoryPoints"); b.HasKey(x => new { x.ItemId, x.Source, x.Metric, x.PeriodUtc });
+        b.ToTable("MarketHistoryPoints");
+        b.HasKey(x => new { x.ItemId, x.Source, x.Metric, x.PeriodUtc });
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
-        b.Property(x => x.Source).HasMaxLength(40); b.Property(x => x.Metric).HasMaxLength(30);
+        b.Property(x => x.Source).HasMaxLength(40);
+        b.Property(x => x.Metric).HasMaxLength(30);
         b.Property(x => x.Value).HasPrecision(28, 6);
     }
 }
@@ -48,7 +51,8 @@ public sealed class MarketRapSnapshotConfiguration : IEntityTypeConfiguration<Ma
 {
     public void Configure(EntityTypeBuilder<MarketRapSnapshot> b)
     {
-        b.ToTable("MarketRapSnapshots"); b.HasKey(x => new { x.ItemId, x.ObservedAtUtc });
+        b.ToTable("MarketRapSnapshots");
+        b.HasKey(x => new { x.ItemId, x.ObservedAtUtc });
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
         b.Property(x => x.Value).HasPrecision(28, 6);
     }

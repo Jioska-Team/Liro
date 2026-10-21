@@ -69,6 +69,32 @@ internal static class ApiTests
             });
         }
 
+        foreach (var scheme in new[] { "http", "https" })
+        {
+            suite.AsyncTest("Anonymous request has no admin authentication failure: " + scheme, async () =>
+            {
+                var services = new ServiceCollection();
+                services.AddLogging();
+                var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Security:AdminApiKey"] = new string('a', 40)
+                }).Build();
+                Liro.Api.ApiServiceExtensions.AddLiroApi(services, config);
+                using var provider = services.BuildServiceProvider();
+                using var scope = provider.CreateScope();
+                var context = new Microsoft.AspNetCore.Http.DefaultHttpContext { RequestServices = scope.ServiceProvider };
+                context.Request.Scheme = scheme;
+                context.Request.Path = "/api/lan/ready";
+                var result = await context.AuthenticateAsync(Liro.Api.Security.AdminAuthenticationOptions.SchemeName);
+                Check.That(result.None && result.Failure is null && !result.Succeeded,
+                    "Anonymous readiness request incorrectly reports an administrative authentication failure");
+                var authorization = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Authorization.IAuthorizationService>();
+                var decision = await authorization.AuthorizeAsync(context.User, context, "CatalogAdmin");
+                Check.That(!decision.Succeeded, "Anonymous requests must not gain administrative access");
+                await context.ChallengeAsync(Liro.Api.Security.AdminAuthenticationOptions.SchemeName);
+                Check.That(context.Response.StatusCode == 401, "Missing credentials must still produce an administrative challenge");
+            });
+        }
         suite.Test("MVC validates the actual create request without server errors", () =>
         {
             var services = new ServiceCollection();

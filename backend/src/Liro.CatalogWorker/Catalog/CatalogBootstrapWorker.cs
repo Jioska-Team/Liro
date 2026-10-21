@@ -85,18 +85,30 @@ public sealed class CatalogBootstrapWorker(IServiceScopeFactory scopeFactory, IL
                         var scheduled = new List<CatalogSearchPartition>();
                         foreach (var child in children)
                         {
-                            if (partitions.ContainsKey(child.Key)) { continue; }
+                            if (partitions.ContainsKey(child.Key))
+                            {
+                                continue;
+                            }
                             if (partitions.Count >= config.CoverageMaxPartitions)
                             {
                                 logger.LogWarning("Coverage partition budget reached ({Limit}); unresolved coverage remains visible as PossiblyTruncated.", config.CoverageMaxPartitions);
                                 break;
                             }
-                            if (partitions.TryAdd(child.Key, child)) { scheduled.Add(child); }
+                            if (partitions.TryAdd(child.Key, child))
+                            {
+                                scheduled.Add(child);
+                            }
                         }
                         foreach (var child in scheduled.AsEnumerable().Reverse())
                         {
-                            if (child.Scope == CatalogSearchScope.All) { pending.AddFirst(child); }
-                            else { pending.AddLast(child); }
+                            if (child.Scope == CatalogSearchScope.All)
+                            {
+                                pending.AddFirst(child);
+                            }
+                            else
+                            {
+                                pending.AddLast(child);
+                            }
                         }
                         logger.LogWarning("Coverage partition {Partition} may be truncated. Complementary partitions: {Children}. Full coverage is unverified.", partition.Key, children.Count);
                     }
@@ -129,7 +141,10 @@ public sealed class CatalogBootstrapWorker(IServiceScopeFactory scopeFactory, IL
             }
             finally
             {
-                if (!finished.Contains(partition.Key)) { pending.AddLast(partition); }
+                if (!finished.Contains(partition.Key))
+                {
+                    pending.AddLast(partition);
+                }
             }
         }
     }

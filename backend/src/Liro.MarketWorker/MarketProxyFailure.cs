@@ -5,7 +5,10 @@ public static class MarketProxyFailure
 {
     public static async Task<HttpResponseMessage> SendAsync(Func<Task<HttpResponseMessage>> send, Func<TimeSpan, Task> pauseAccount)
     {
-        try { return await send(); }
+        try
+        {
+            return await send();
+        }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.PaymentRequired)
         {
             // CONNECT failures are thrown before an HTTP response from Roblox exists.

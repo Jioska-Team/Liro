@@ -9,7 +9,8 @@ public static class CatalogRecentWindow
     public static async Task<(int Pages, int Observations, bool HitLimit)> ReadAsync(IRobloxCatalogDiscoveryClient client,
         CatalogSearchScope scope, int limit, Func<RobloxCatalogDiscoveryPage, Task> apply, CancellationToken ct)
     {
-        if (limit < 1) throw new ArgumentOutOfRangeException(nameof(limit));
+        if (limit < 1)
+            throw new ArgumentOutOfRangeException(nameof(limit));
         string? cursor = null;
         var seen = new HashSet<string>();
         var pages = 0;
@@ -36,8 +37,10 @@ public static class CatalogRecentWindow
             pages++;
             observations += sliced.ReturnedCount;
             cursor = string.IsNullOrWhiteSpace(page.NextPageCursor) ? null : page.NextPageCursor;
-            if (observations >= limit) return (pages, observations, true);
-            if (cursor is not null && !seen.Add(cursor)) throw new InvalidOperationException("Recent search returned a cyclic cursor.");
+            if (observations >= limit)
+                return (pages, observations, true);
+            if (cursor is not null && !seen.Add(cursor))
+                throw new InvalidOperationException("Recent search returned a cyclic cursor.");
         } while (cursor is not null);
         return (pages, observations, false);
     }

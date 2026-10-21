@@ -9,7 +9,10 @@ public sealed class DashboardInteractionHandler(AgentOptions options, IDashboard
 
     public async Task<string> AppendToStartupAsync(string message, ulong userId, CancellationToken cancellationToken)
     {
-        if (!options.ShareAspireInChannel && (options.OwnerUserId == 0 || userId != options.OwnerUserId)) { return message; }
+        if (!options.ShareAspireInChannel && (options.OwnerUserId == 0 || userId != options.OwnerUserId))
+        {
+            return message;
+        }
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -31,7 +34,11 @@ public sealed class DashboardInteractionHandler(AgentOptions options, IDashboard
             && request.GuildId == options.GuildId && request.ChannelId == options.ChannelId
             && options.PanelMessageId != 0 && request.MessageId == options.PanelMessageId
             && request.CustomId == ButtonId;
-        if (!authorized) { await reply.DenyAsync(); return; }
+        if (!authorized)
+        {
+            await reply.DenyAsync();
+            return;
+        }
         await reply.DeferAsync();
         try
         {

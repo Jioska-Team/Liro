@@ -295,8 +295,14 @@ internal static class MarketTests
             {
                 using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
                 Check.That(body.RootElement.GetProperty("items")[0].GetProperty("id").GetInt64() == 112941869919660, "Wrong requested identity");
-                return new(System.Net.HttpStatusCode.OK) { Content = new StringContent(payload) };
-            })) { BaseAddress = new("https://catalog.roblox.com/") };
+                return new(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(payload)
+                };
+            }))
+            {
+                BaseAddress = new("https://catalog.roblox.com/")
+            };
             var client = new RobloxCatalogClient(http);
             var remote = (await client.GetItemAsync(112941869919660))!;
             Check.That(remote.Name == "Satyr Face - Mood" && remote.Details!.CreatorId == 1 && remote.Details.AssetTypeId == 78, "Valid item metadata was lost");

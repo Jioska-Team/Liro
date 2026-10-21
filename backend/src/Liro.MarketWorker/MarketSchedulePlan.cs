@@ -3,7 +3,10 @@ namespace Liro.MarketWorker;
 public sealed class MarketPopulation
 {
     public string Activity { get; set; } = "SinDatos";
-    public int Count { get; set; }
+    public int Count
+    {
+        get; set;
+    }
 }
 
 public static class MarketSchedulePlan
@@ -23,11 +26,15 @@ public static class MarketSchedulePlan
             + (double)Count("InciertaReciente") / baseline.UncertainMinutes
             + (double)(Count("SinHistorial") + Count("SinDatos")) / baseline.MissingHistoryMinutes;
         var scale = Math.Max(1, backgroundDemand / (usable * 0.25));
-        return new MarketOptions {
-            Enabled = baseline.Enabled, RequestsPerMinute = baseline.RequestsPerMinute,
-            DirectFallbackEnabled = baseline.DirectFallbackEnabled, DirectRequestsPerMinute = baseline.DirectRequestsPerMinute,
+        return new MarketOptions
+        {
+            Enabled = baseline.Enabled,
+            RequestsPerMinute = baseline.RequestsPerMinute,
+            DirectFallbackEnabled = baseline.DirectFallbackEnabled,
+            DirectRequestsPerMinute = baseline.DirectRequestsPerMinute,
             MaxConcurrentRequests = baseline.MaxConcurrentRequests,
-            VeryActiveMinutes = very, ActiveMinutes = Math.Max(very, high),
+            VeryActiveMinutes = very,
+            ActiveMinutes = Math.Max(very, high),
             NormalMinutes = Math.Max(high, (int)Math.Ceiling(baseline.NormalMinutes * scale)),
             LowMinutes = Math.Max(high, (int)Math.Ceiling(baseline.LowMinutes * scale)),
             InactiveMinutes = Math.Max(high, (int)Math.Ceiling(baseline.InactiveMinutes * scale)),

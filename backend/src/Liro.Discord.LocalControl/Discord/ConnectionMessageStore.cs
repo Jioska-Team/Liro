@@ -25,7 +25,10 @@ public sealed class ConnectionMessageStore(string directory, ulong channelId, ul
         await gate.WaitAsync(token);
         try
         {
-            if (expectedVersion is { } expected && expected != version) { return; }
+            if (expectedVersion is { } expected && expected != version)
+            {
+                return;
+            }
             Load();
             if (current is null || !await transport.UpdateAsync(current.MessageId, content, token))
                 current = new(channelId, panelId, await transport.CreateAsync(content, token));
@@ -41,7 +44,10 @@ public sealed class ConnectionMessageStore(string directory, ulong channelId, ul
         {
             Interlocked.Increment(ref version);
             Load();
-            if (current is null) { return; }
+            if (current is null)
+            {
+                return;
+            }
             await transport.DeleteAsync(current.MessageId, token);
             File.Delete(FilePath);
             current = null;
@@ -51,12 +57,16 @@ public sealed class ConnectionMessageStore(string directory, ulong channelId, ul
 
     private void Load()
     {
-        if (loaded) { return; }
+        if (loaded)
+        {
+            return;
+        }
         if (File.Exists(FilePath))
         {
             var saved = JsonSerializer.Deserialize<SavedMessage>(File.ReadAllText(FilePath));
             if (saved is not null && saved.ChannelId == channelId && saved.PanelId == panelId
-                && saved.MessageId != 0 && saved.MessageId != panelId) current = saved;
+                && saved.MessageId != 0 && saved.MessageId != panelId)
+                current = saved;
         }
         loaded = true;
     }

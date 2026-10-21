@@ -22,21 +22,21 @@ internal static class DatabaseBatchTests
     public static void Register(RegressionSuite suite)
     {
         foreach (var count in new[] { 120, 121, 240, 241 })
-        suite.AsyncTest($"El escritor real guarda {count} observaciones en grupos de hasta 120 sin cliente HTTP", async () =>
-        {
-            var probes = new List<Probe>();
-            var services = new ServiceCollection();
-            services.AddScoped<LiroDbContext>(_ => { var probe = new Probe(); probes.Add(probe); return Database(probe); });
-            services.AddScoped<ICatalogPageWriter>(sp => Writer(sp.GetRequiredService<LiroDbContext>()));
-            using var provider = services.BuildServiceProvider();
-            var observations = Enumerable.Range(1, count).ToDictionary(id => new CatalogItemKey(id), id => new RobloxCatalogResult(Remote(id), null));
-            var page = new RobloxCatalogDiscoveryPage([], null) { Items = observations.Keys.ToArray(), Details = observations };
-            var result = await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new(), default, fetchFallback: false);
-            var expected = Enumerable.Range(0, (count + 119) / 120).Select(i => Math.Min(120, count - i * 120)).ToArray();
-            Check.That(result.Added == count && result.Failed == 0 && probes.Select(x => x.Added).SequenceEqual(expected)
-                && probes.All(x => x.Saves == 1 && x.Reads == 2 && x.Snapshots == x.Added),
-                "Se excedio el limite, se perdieron filas o se repitieron guardados");
-        });
+            suite.AsyncTest($"El escritor real guarda {count} observaciones en grupos de hasta 120 sin cliente HTTP", async () =>
+            {
+                var probes = new List<Probe>();
+                var services = new ServiceCollection();
+                services.AddScoped<LiroDbContext>(_ => { var probe = new Probe(); probes.Add(probe); return Database(probe); });
+                services.AddScoped<ICatalogPageWriter>(sp => Writer(sp.GetRequiredService<LiroDbContext>()));
+                using var provider = services.BuildServiceProvider();
+                var observations = Enumerable.Range(1, count).ToDictionary(id => new CatalogItemKey(id), id => new RobloxCatalogResult(Remote(id), null));
+                var page = new RobloxCatalogDiscoveryPage([], null) { Items = observations.Keys.ToArray(), Details = observations };
+                var result = await CatalogSearchPageProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(), page, false, new(), default, fetchFallback: false);
+                var expected = Enumerable.Range(0, (count + 119) / 120).Select(i => Math.Min(120, count - i * 120)).ToArray();
+                Check.That(result.Added == count && result.Failed == 0 && probes.Select(x => x.Added).SequenceEqual(expected)
+                    && probes.All(x => x.Saves == 1 && x.Reads == 2 && x.Snapshots == x.Added),
+                    "Se excedio el limite, se perdieron filas o se repitieron guardados");
+            });
         suite.AsyncTest("Database page uses two reads and one save for 120 items with snapshots", async () =>
         {
             var probe = new Probe();
@@ -67,8 +67,11 @@ internal static class DatabaseBatchTests
         });
         suite.AsyncTest("Database batch preserves backoff and quarantined typed failures", async () =>
         {
-            var probe = new Probe { Failures = [new() { AssetId = 1, NextAttemptAtUtc = DateTime.UtcNow.AddHours(1) },
-                new() { AssetId = 1, ItemType = CatalogItemType.Bundle, DeadLetteredAtUtc = DateTime.UtcNow, NextAttemptAtUtc = DateTime.UtcNow.AddHours(-1) }] };
+            var probe = new Probe
+            {
+                Failures = [new() { AssetId = 1, NextAttemptAtUtc = DateTime.UtcNow.AddHours(1) },
+                new() { AssetId = 1, ItemType = CatalogItemType.Bundle, DeadLetteredAtUtc = DateTime.UtcNow, NextAttemptAtUtc = DateTime.UtcNow.AddHours(-1) }]
+            };
             using var db = Database(probe);
             var data = new Dictionary<CatalogItemKey, RobloxCatalogItem> { [new(1)] = Remote(1), [new(1, CatalogItemType.Bundle)] = Remote(1, CatalogItemType.Bundle), [new(2)] = Remote(2) };
             var result = await Writer(db).WriteAsync(data, false, default);
@@ -100,9 +103,19 @@ internal static class DatabaseBatchTests
     }
     private static RobloxCatalogItem Remote(long id, CatalogItemType type = CatalogItemType.Asset) => new(id, "Item", null, ItemMarketStatus.Limited)
     {
-        ItemType = type, Source = "RobloxCatalogSearchV2", ObservedAtUtc = DateTime.UtcNow,
-        Details = new() { CreatorId = 1, CreatorType = "User", Restrictions = ["Limited"] },
-        Market = new() { PrimaryPriceRobux = 10 }
+        ItemType = type,
+        Source = "RobloxCatalogSearchV2",
+        ObservedAtUtc = DateTime.UtcNow,
+        Details = new()
+        {
+            CreatorId = 1,
+            CreatorType = "User",
+            Restrictions = ["Limited"]
+        },
+        Market = new()
+        {
+            PrimaryPriceRobux = 10
+        }
     };
     private static LiroDbContext Database(Probe probe) => new(new DbContextOptionsBuilder<LiroDbContext>()
         .UseNpgsql("Host=localhost;Database=unused;Username=unused;Password=unused")
@@ -130,8 +143,10 @@ internal static class DatabaseBatchTests
             probe.Events = entries.Count(x => x.Entity is OutboxMessage && x.State == EntityState.Added);
             probe.DeletedFailures = entries.Count(x => x.Entity is CatalogImportFailure && x.State == EntityState.Deleted);
             probe.SavedStatus = entries.Select(x => x.Entity).OfType<Item>().FirstOrDefault()?.MarketStatus;
-            if (probe.FailSave) throw new DbUpdateConcurrencyException("simulated row conflict");
-            if (probe.Outage) throw new DbUpdateException("database unavailable", new TimeoutException());
+            if (probe.FailSave)
+                throw new DbUpdateConcurrencyException("simulated row conflict");
+            if (probe.Outage)
+                throw new DbUpdateException("database unavailable", new TimeoutException());
             return ValueTask.FromResult(InterceptionResult<int>.SuppressWithResult(entries.Length));
         }
     }
@@ -143,10 +158,12 @@ internal static class DatabaseBatchTests
             var table = new DataTable();
             var projection = command.CommandText.Split("FROM", 2)[0];
             var fields = Regex.Matches(projection, "(\\w+)\\.(?:\"([^\"]+)\"|(xmin))").Select(match => (Alias: match.Groups[1].Value, Column: match.Groups[2].Success ? match.Groups[2].Value : "xmin")).ToArray();
-            foreach (var field in fields) table.Columns.Add("c" + table.Columns.Count, typeof(object));
+            foreach (var field in fields)
+                table.Columns.Add("c" + table.Columns.Count, typeof(object));
             if (command.CommandText.Contains("FROM \"CatalogImportFailures\""))
             {
-                foreach (var failure in probe.Failures) table.Rows.Add(fields.Select(field => Value(failure, field.Column)).ToArray());
+                foreach (var failure in probe.Failures)
+                    table.Rows.Add(fields.Select(field => Value(failure, field.Column)).ToArray());
             }
             else if (probe.Existing is { } item)
             {

@@ -7,7 +7,10 @@ public sealed class LocalCredentialStore(string localDirectory)
 {
     public void Save(string token)
     {
-        if (string.IsNullOrWhiteSpace(token)) { throw new InvalidOperationException("El token no puede estar vacio."); }
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new InvalidOperationException("El token no puede estar vacio.");
+        }
         Directory.CreateDirectory(localDirectory);
         var plain = Encoding.UTF8.GetBytes(token);
         try

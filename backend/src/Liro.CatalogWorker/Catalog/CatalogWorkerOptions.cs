@@ -9,7 +9,10 @@ public sealed class CatalogWorkerOptions
     public TimeSpan ComplementaryLimitedInterval { get; set; } = TimeSpan.FromMinutes(15);
     public int RecentItemLimit { get; set; } = 1200;
     public int RecentLimitedLimit { get; set; } = 600;
-    public bool BoundedRecentDiscovery { get; set; }
+    public bool BoundedRecentDiscovery
+    {
+        get; set;
+    }
     public bool BoundedLimitedDiscovery { get; set; } = true;
     public bool HistoricalRefreshEnabled { get; set; } = true;
     public bool LimitedMonitorEnabled { get; set; } = true;

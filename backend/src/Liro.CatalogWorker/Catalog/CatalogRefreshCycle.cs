@@ -21,10 +21,12 @@ public static class CatalogRefreshCycle
             {
                 using var itemScope = scopes.CreateScope();
                 var processor = itemScope.ServiceProvider.GetRequiredService<CatalogImportProcessor>();
-                if (!await processor.CanProcessAsync(entry.Key, false, cancellationToken)) continue;
+                if (!await processor.CanProcessAsync(entry.Key, false, cancellationToken))
+                    continue;
                 var result = results.GetValueOrDefault(entry.Key) ?? new RobloxCatalogResult(null, "Item omitted from priority response.");
                 var outcome = await processor.ProcessResultAsync(entry.Key, result, false, cancellationToken, refreshThumbnail: false);
-                if (outcome.Failed) continue; // Persisted retry backoff applies to this queue too.
+                if (outcome.Failed)
+                    continue; // Persisted retry backoff applies to this queue too.
                 await queue.CompleteAsync(entry, cancellationToken);
                 logger.LogInformation("Priority catalog item confirmed. Item: {Key}, DetectionToSaveSeconds: {Seconds}",
                     entry.Key, Math.Max(0, (DateTime.UtcNow - entry.DetectedAtUtc).TotalSeconds));
@@ -32,7 +34,8 @@ public static class CatalogRefreshCycle
         }
 
         // Priority confirmations stay active even when the historical catalog sweep is disabled.
-        if (!options.HistoricalRefreshEnabled) return entries.Count;
+        if (!options.HistoricalRefreshEnabled)
+            return entries.Count;
 
         // One ordinary details batch per turn prevents starvation without delaying the next priority check by 50 thumbnails.
         var now = DateTime.UtcNow;

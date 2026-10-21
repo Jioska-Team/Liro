@@ -28,7 +28,10 @@ public sealed class BackendPanelUpdater(IStartupCoordinator startup, TimeProvide
     private readonly SemaphoreSlim gate = new(1, 1);
     private string? lastContent;
     private DateTimeOffset lastPublished;
-    public StartupResult? LastResult { get; private set; }
+    public StartupResult? LastResult
+    {
+        get; private set;
+    }
 
     public async Task RefreshAsync(CancellationToken token)
     {
@@ -36,7 +39,10 @@ public sealed class BackendPanelUpdater(IStartupCoordinator startup, TimeProvide
         try
         {
             StartupResult result;
-            try { result = await startup.GetStatusAsync(token); }
+            try
+            {
+                result = await startup.GetStatusAsync(token);
+            }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
             catch (Exception) { result = new(StartupStatus.Unknown); }
             await PublishAsync(result.Status, token);
@@ -48,7 +54,10 @@ public sealed class BackendPanelUpdater(IStartupCoordinator startup, TimeProvide
     public async Task MarkUnavailableAsync(CancellationToken token)
     {
         await gate.WaitAsync(token);
-        try { await PublishAsync(StartupStatus.Unknown, token); }
+        try
+        {
+            await PublishAsync(StartupStatus.Unknown, token);
+        }
         finally { gate.Release(); }
     }
 
@@ -56,7 +65,10 @@ public sealed class BackendPanelUpdater(IStartupCoordinator startup, TimeProvide
     {
         var content = BackendPanel.Content(status);
         var now = clock.GetUtcNow();
-        if (content == lastContent && now - lastPublished < TimeSpan.FromSeconds(1)) { return; }
+        if (content == lastContent && now - lastPublished < TimeSpan.FromSeconds(1))
+        {
+            return;
+        }
         await publish(content + $"\nÚltima comprobación: <t:{now.ToUnixTimeSeconds()}:T>.", token);
         lastContent = content;
         lastPublished = now;

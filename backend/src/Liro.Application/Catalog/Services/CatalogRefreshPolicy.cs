@@ -5,7 +5,10 @@ namespace Liro.Application.Catalog.Services;
 
 public sealed class CatalogRefreshPolicy
 {
-    public TimeSpan ThumbnailInterval { get; }
+    public TimeSpan ThumbnailInterval
+    {
+        get;
+    }
     public TimeSpan ThumbnailRetryInterval { get; } = TimeSpan.FromMinutes(15);
 
     public bool ShouldRefreshThumbnail(Item item, DateTime now) =>

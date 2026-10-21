@@ -19,7 +19,14 @@ public static class ApiServiceExtensions
         services.AddAuthorization(options => options.AddPolicy("CatalogAdmin", policy => policy.AddAuthenticationSchemes(AdminAuthenticationOptions.SchemeName).RequireAuthenticatedUser()));
         services.AddRateLimiter(options =>
         {
+            CatalogReadLimits.Configure(options);
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            // Shared per API process, only for the new history routes; no queue competing with workers.
+            options.AddConcurrencyLimiter("market-history-reads", limiter =>
+            {
+                limiter.PermitLimit = 2;
+                limiter.QueueLimit = 0;
+            });
             options.AddFixedWindowLimiter("catalog-writes", limiter =>
             {
                 limiter.PermitLimit = 10;

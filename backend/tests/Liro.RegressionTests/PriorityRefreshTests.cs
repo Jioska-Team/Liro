@@ -36,7 +36,11 @@ internal static class PriorityRefreshTests
             using var monitor = new CatalogLimitedMonitor(provider.GetRequiredService<IServiceScopeFactory>(), Options.Create(new CatalogWorkerOptions()),
                 Options.Create(new RobloxCatalogOptions()), NullLogger<CatalogLimitedMonitor>.Instance);
             await monitor.StartAsync(stop.Token);
-            try { await monitor.ExecuteTask!; } catch (OperationCanceledException) { }
+            try
+            {
+                await monitor.ExecuteTask!;
+            }
+            catch (OperationCanceledException) { }
             Check.That(discovery.Cursors.Count >= 7, "El monitor mantuvo la pausa entre recorridos completos");
         });
         suite.AsyncTest("Fresh thumbnail is reused during catalog refresh", async () =>
@@ -116,7 +120,10 @@ internal static class PriorityRefreshTests
             var images = new CountingThumbnail();
             using var provider = Provider(repo, queue, catalog, images);
             var logger = new CaptureLogger();
-            var processed = await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(), new() { ItemDelay = TimeSpan.Zero }, logger, default);
+            var processed = await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(), new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, logger, default);
             Check.That(processed == 2 && catalog.Calls.SelectMany(x => x).Select(x => x.Id).SequenceEqual(new long[] { 1, 2 }), "Ordinary item ran before priority or work was lost");
             Check.That(known.MarketStatus == ItemMarketStatus.Limited && known.DomainEvents.Count == 1 && queue.Entries.Count == 0 && images.Calls == 0,
                 "Known item was skipped, not confirmed, not dequeued, or fetched images");
@@ -132,7 +139,10 @@ internal static class PriorityRefreshTests
             var images = new CountingThumbnail();
             using var provider = Provider(new TestRepository(known, ordinary), queue, catalog, images);
             var processed = await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(),
-                new() { HistoricalRefreshEnabled = false }, NullLogger.Instance, default);
+                new()
+                {
+                    HistoricalRefreshEnabled = false
+                }, NullLogger.Instance, default);
             Check.That(processed == 1 && catalog.Calls.Count == 1 && catalog.Calls[0].SequenceEqual(new CatalogItemKey[] { new(1) }), "Historical sweep still requested ordinary IDs");
             Check.That(known.MarketStatus == ItemMarketStatus.Limited && queue.Entries.Count == 0 && ordinary.LastCheckedAt is null && images.Calls == 0,
                 "Priority work was dropped or ordinary item was refreshed");
@@ -143,7 +153,10 @@ internal static class PriorityRefreshTests
             services.AddSingleton<ICatalogPriorityQueue>(new TestQueue());
             using var provider = services.BuildServiceProvider();
             var processed = await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(),
-                new() { HistoricalRefreshEnabled = false }, NullLogger.Instance, default);
+                new()
+                {
+                    HistoricalRefreshEnabled = false
+                }, NullLogger.Instance, default);
             Check.That(processed == 0, "Disabled historical sweep reported work");
         });
         suite.AsyncTest("Priority failure remains queued and retry backoff prevents immediate retry", async () =>
@@ -155,8 +168,14 @@ internal static class PriorityRefreshTests
             var catalog = new TestCatalog { Invalid = true };
             using var provider = Provider(new TestRepository(Fixtures.Item()), queue, catalog, new CountingThumbnail(), failures);
             var scopes = provider.GetRequiredService<IServiceScopeFactory>();
-            await CatalogRefreshCycle.RunAsync(scopes, new() { ItemDelay = TimeSpan.Zero }, NullLogger.Instance, default);
-            await CatalogRefreshCycle.RunAsync(scopes, new() { ItemDelay = TimeSpan.Zero }, NullLogger.Instance, default);
+            await CatalogRefreshCycle.RunAsync(scopes, new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, NullLogger.Instance, default);
+            await CatalogRefreshCycle.RunAsync(scopes, new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, NullLogger.Instance, default);
             Check.That(queue.Entries.Count == 1 && failures.Blocked.Contains(new(1)) && catalog.Calls.Count == 1, "Failure lost priority or bypassed retry backoff");
         });
         suite.AsyncTest("Priority rate limit retains work without consuming item retry budget", async () =>
@@ -255,7 +274,10 @@ internal static class PriorityRefreshTests
             var queue = new TestQueue();
             await queue.EnqueueAsync([new(1, CatalogItemType.Bundle)], DateTime.UtcNow, default);
             using var provider = Provider(repo, queue, new TestCatalog(), new CountingThumbnail());
-            await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(), new() { ItemDelay = TimeSpan.Zero }, NullLogger.Instance, default);
+            await CatalogRefreshCycle.RunAsync(provider.GetRequiredService<IServiceScopeFactory>(), new()
+            {
+                ItemDelay = TimeSpan.Zero
+            }, NullLogger.Instance, default);
             Check.That(repo.Items.ContainsKey(new(1, CatalogItemType.Bundle)) && repo.Items.ContainsKey(new(1)) && queue.Entries.Count == 0, "Bundle overwrote asset or was not imported");
         });
         suite.AsyncTest("Refresh drains pending batches without cycle sleep and reports backlog", async () =>
@@ -267,7 +289,10 @@ internal static class PriorityRefreshTests
             using var worker = new CatalogRefreshWorker(provider.GetRequiredService<IServiceScopeFactory>(), logger,
                 Options.Create(new CatalogWorkerOptions { ItemDelay = TimeSpan.Zero, CycleInterval = TimeSpan.FromHours(1), RefreshIdleDelay = TimeSpan.FromHours(1) }));
             await worker.StartAsync(default);
-            try { await repo.AllSaved.Task.WaitAsync(TimeSpan.FromSeconds(5)); }
+            try
+            {
+                await repo.AllSaved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
             finally { await worker.StopAsync(default); }
             Check.That(items.All(x => x.LastCheckedAt is not null) && logger.Messages.Any(x => x.Contains("PriorityPending")), "Pending batches slept or health was not emitted");
         });
@@ -283,10 +308,12 @@ internal static class PriorityRefreshTests
             var pending = new List<Task<HttpResponseMessage>> { first, normal };
             using (new RobloxRequestPriority())
             {
-                for (var i = 0; i < 5; i++) pending.Add(gate.SendAsync(_ => { order.Add("urgent"); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default));
+                for (var i = 0; i < 5; i++)
+                    pending.Add(gate.SendAsync(_ => { order.Add("urgent"); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); }, default));
             }
             release.SetResult();
-            foreach (var response in await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(5))) response.Dispose();
+            foreach (var response in await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(5)))
+                response.Dispose();
             Check.That(order.SequenceEqual(new[] { "urgent", "urgent", "urgent", "normal", "urgent", "urgent" }), "Priority or starvation protection failed");
         });
         suite.AsyncTest("Cancelled priority waiter does not block HTTP gate", async () =>
@@ -296,7 +323,8 @@ internal static class PriorityRefreshTests
             var first = gate.SendAsync(async _ => { await release.Task; return new(HttpStatusCode.OK); }, default);
             using var cts = new CancellationTokenSource();
             Task<HttpResponseMessage> cancelled;
-            using (new RobloxRequestPriority()) cancelled = gate.SendAsync(_ => throw new Exception("Cancelled request was sent"), cts.Token);
+            using (new RobloxRequestPriority())
+                cancelled = gate.SendAsync(_ => throw new Exception("Cancelled request was sent"), cts.Token);
             cts.Cancel();
             await Check.ThrowsAsync<TaskCanceledException>(async () => await cancelled);
             release.SetResult();
@@ -339,10 +367,18 @@ internal static class PriorityRefreshTests
         public Dictionary<CatalogItemKey, CatalogPriorityEntry> Entries { get; } = [];
         public TestFailures? Failures;
         public Task EnqueueAsync(IReadOnlyCollection<CatalogItemKey> keys, DateTime now, CancellationToken ct)
-        { foreach (var key in keys) Entries.TryAdd(key, new(key, now)); return Task.CompletedTask; }
+        {
+            foreach (var key in keys)
+                Entries.TryAdd(key, new(key, now));
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<CatalogPriorityEntry>> GetDueAsync(DateTime now, int limit, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<CatalogPriorityEntry>>(Entries.Values.Where(x => Failures?.Blocked.Contains(x.Key) != true).Take(limit).ToArray());
-        public Task CompleteAsync(CatalogPriorityEntry entry, CancellationToken ct) { Entries.Remove(entry.Key); return Task.CompletedTask; }
+        public Task CompleteAsync(CatalogPriorityEntry entry, CancellationToken ct)
+        {
+            Entries.Remove(entry.Key);
+            return Task.CompletedTask;
+        }
         public Task<CatalogQueueHealth> GetHealthAsync(DateTime now, CancellationToken ct) => Task.FromResult(new CatalogQueueHealth(Entries.Count, Entries.Values.Select(x => (DateTime?)x.DetectedAtUtc).Min(), 1, now.AddHours(-1)));
     }
     private sealed class TestRepository(params Item[] items) : IItemRepository
@@ -355,9 +391,22 @@ internal static class PriorityRefreshTests
         public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(new(id)));
         public Task AddAsync(Item item, CancellationToken ct = default) => UpdateAsync(item, ct);
         public Task UpdateAsync(Item item, CancellationToken ct = default)
-        { Items[new(item.RobloxAssetId, item.ItemType)] = item; if (Items.Values.All(x => x.LastCheckedAt is not null)) AllSaved.TrySetResult(); return Task.CompletedTask; }
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default) { Items.Remove(new(id)); return Task.CompletedTask; }
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) { Items[new(id)].MarkChecked(time, TimeSpan.FromMinutes(30)); return Task.CompletedTask; }
+        {
+            Items[new(item.RobloxAssetId, item.ItemType)] = item;
+            if (Items.Values.All(x => x.LastCheckedAt is not null))
+                AllSaved.TrySetResult();
+            return Task.CompletedTask;
+        }
+        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default)
+        {
+            Items.Remove(new(id));
+            return Task.CompletedTask;
+        }
+        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default)
+        {
+            Items[new(id)].MarkChecked(time, TimeSpan.FromMinutes(30));
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime now, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>(Items.Values.Where(x => x.NextRefreshAt <= now).Take(limit).Select(x => x.RobloxAssetId).ToArray());
         public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime now, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogItemKey>>(Items.Where(x => x.Value.NextRefreshAt <= now).Take(limit).Select(x => x.Key).ToArray());
     }
@@ -370,9 +419,17 @@ internal static class PriorityRefreshTests
         public Task<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>> GetItemsAsync(IReadOnlyList<CatalogItemKey> keys, CancellationToken ct = default)
         {
             Calls.Add(keys.ToArray());
-            if (RateLimited) throw new RobloxRateLimitedException(DateTimeOffset.UtcNow.AddMinutes(1));
+            if (RateLimited)
+                throw new RobloxRateLimitedException(DateTimeOffset.UtcNow.AddMinutes(1));
             return Task.FromResult<IReadOnlyDictionary<CatalogItemKey, RobloxCatalogResult>>(keys.ToDictionary(x => x, x => Invalid ? new RobloxCatalogResult(null, "invalid") : new(new(x.Id, "Confirmed", null, ItemMarketStatus.Limited)
-            { ItemType = x.Type, Details = new() { CreatorId = 1, CreatorType = "User" } }, null)));
+            {
+                ItemType = x.Type,
+                Details = new()
+                {
+                    CreatorId = 1,
+                    CreatorType = "User"
+                }
+            }, null)));
         }
     }
     private sealed class TestFailures : ICatalogImportFailureStore
@@ -381,9 +438,17 @@ internal static class PriorityRefreshTests
         public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken ct) => CanAttemptAsync(new CatalogItemKey(id), now, ct);
         public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken ct) => Task.FromResult(!Blocked.Contains(key));
         public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken ct) => RecordFailureAsync(new CatalogItemKey(id), error, now, ct);
-        public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken ct) { Blocked.Add(key); return Task.CompletedTask; }
+        public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken ct)
+        {
+            Blocked.Add(key);
+            return Task.CompletedTask;
+        }
         public Task ResolveAsync(long id, CancellationToken ct) => ResolveAsync(new CatalogItemKey(id), ct);
-        public Task ResolveAsync(CatalogItemKey key, CancellationToken ct) { Blocked.Remove(key); return Task.CompletedTask; }
+        public Task ResolveAsync(CatalogItemKey key, CancellationToken ct)
+        {
+            Blocked.Remove(key);
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<long>>([]);
     }
     private sealed class TestDiscovery : IRobloxCatalogDiscoveryClient
@@ -398,9 +463,11 @@ internal static class PriorityRefreshTests
         public Task<RobloxCatalogDiscoveryPage> GetPageAsync(CatalogSearchScope scope, bool recent, string? cursor, CancellationToken ct)
         {
             Check.That(scope == CatalogSearchScope.Collectibles && recent, "Wrong search scope");
-            Cursors.Add(cursor); AllUrgent &= RobloxRequestPriority.IsUrgent;
+            Cursors.Add(cursor);
+            AllUrgent &= RobloxRequestPriority.IsUrgent;
             OnCall?.Invoke(Cursors.Count);
-            if ((FailTail && cursor is not null) || (FailAt is not null && cursor == FailAt)) throw new HttpRequestException("unavailable", null, HttpStatusCode.ServiceUnavailable);
+            if ((FailTail && cursor is not null) || (FailAt is not null && cursor == FailAt))
+                throw new HttpRequestException("unavailable", null, HttpStatusCode.ServiceUnavailable);
             return Task.FromResult(new RobloxCatalogDiscoveryPage([], cursor == null ? "tail" : cursor == "tail" ? "tail2" : null) { LimitedItems = [new(1), new(1, CatalogItemType.Bundle)] });
         }
     }
@@ -408,7 +475,11 @@ internal static class PriorityRefreshTests
     {
         public CatalogCheckpoint Checkpoint = new(null, false);
         public Task<CatalogCheckpoint> LoadAsync(string scope, CancellationToken ct) => Task.FromResult(Checkpoint);
-        public Task SaveAsync(string scope, CatalogCheckpoint value, CancellationToken ct) { Checkpoint = value; return Task.CompletedTask; }
+        public Task SaveAsync(string scope, CatalogCheckpoint value, CancellationToken ct)
+        {
+            Checkpoint = value;
+            return Task.CompletedTask;
+        }
     }
     private sealed class CaptureLogger : ILogger<CatalogRefreshWorker>
     {
@@ -445,7 +516,9 @@ internal static class PriorityRefreshTests
         {
             Commands.Add(command.CommandText);
             var table = new System.Data.DataTable();
-            table.Columns.Add("ItemId", typeof(long)); table.Columns.Add("ItemType", typeof(string)); table.Columns.Add("DetectedAtUtc", typeof(DateTime));
+            table.Columns.Add("ItemId", typeof(long));
+            table.Columns.Add("ItemType", typeof(string));
+            table.Columns.Add("DetectedAtUtc", typeof(DateTime));
             return ValueTask.FromResult(InterceptionResult<DbDataReader>.SuppressWithResult(table.CreateDataReader()));
         }
     }

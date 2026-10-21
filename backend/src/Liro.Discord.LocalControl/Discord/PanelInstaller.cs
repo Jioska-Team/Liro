@@ -14,7 +14,10 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
         await client.LoginAsync(TokenType.Bot, credentials.Read());
         var requests = new RequestOptions { CancelToken = cancellationToken, Timeout = 10000 };
         var application = await client.GetApplicationInfoAsync(requests);
-        if (application.Id != options.ApplicationId) { throw new SetupFailure("Token y aplicacion no coinciden."); }
+        if (application.Id != options.ApplicationId)
+        {
+            throw new SetupFailure("Token y aplicacion no coinciden.");
+        }
         if (await client.GetChannelAsync(options.ChannelId, requests) is not RestTextChannel channel || channel.GuildId != options.GuildId)
         {
             throw new SetupFailure("El canal configurado no pertenece al servidor autorizado.");
@@ -25,8 +28,14 @@ public sealed class PanelInstaller(AgentOptions options, LocalCredentialStore cr
             var message = await channel.GetMessageAsync(options.PanelMessageId, options: requests);
             if (message is not null)
             {
-                if (message.Author.Id != client.CurrentUser.Id) { throw new SetupFailure("El mensaje guardado no pertenece al bot."); }
-                if (message is not RestUserMessage editable) { throw new SetupFailure("No se pudo editar el panel existente."); }
+                if (message.Author.Id != client.CurrentUser.Id)
+                {
+                    throw new SetupFailure("El mensaje guardado no pertenece al bot.");
+                }
+                if (message is not RestUserMessage editable)
+                {
+                    throw new SetupFailure("No se pudo editar el panel existente.");
+                }
                 await editable.ModifyAsync(properties =>
                 {
                     properties.Content = BackendPanel.Content(Hosting.StartupStatus.Unknown);

@@ -21,7 +21,8 @@ public sealed class AlertService(DiscordSocketClient client, AlertOptions option
         {
             await client.LoginAsync(TokenType.Bot, options.BotToken);
             var application = await client.GetApplicationInfoAsync();
-            if (application.Id != options.ApplicationId) throw new InvalidOperationException("Bot identity mismatch.");
+            if (application.Id != options.ApplicationId)
+                throw new InvalidOperationException("Bot identity mismatch.");
             await client.StartAsync();
             while (!ct.IsCancellationRequested)
             {
@@ -44,7 +45,8 @@ public sealed class AlertService(DiscordSocketClient client, AlertOptions option
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
                 catch (WebshareApiException ex)
                 {
-                    if (ex.RetryAfter > delay) delay = ex.RetryAfter;
+                    if (ex.RetryAfter > delay)
+                        delay = ex.RetryAfter;
                     await SafeHealthAsync(ex.Code, lastSuccess, ct);
                     logger.LogWarning("Bandwidth provider check failed: {Code}", ex.Code);
                 }
@@ -66,19 +68,31 @@ public sealed class AlertService(DiscordSocketClient client, AlertOptions option
         }
         finally
         {
-            try { await client.StopAsync(); } catch (Exception) { }
+            try
+            {
+                await client.StopAsync();
+            }
+            catch (Exception) { }
         }
     }
     private async Task SafeHealthAsync(string status, DateTimeOffset? success, CancellationToken ct)
     {
-        try { await HealthAsync(status, success, null, ct); }
+        try
+        {
+            await HealthAsync(status, success, null, ct);
+        }
         catch (Exception) { logger.LogWarning("Cannot persist bandwidth health status."); }
     }
     private async Task HealthAsync(string status, DateTimeOffset? success, BandwidthSnapshot? usage, CancellationToken ct)
     {
         var path = Path.Combine(directory.Path, "bandwidth-health.json");
         await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(new
-            { Status = status, CheckedAt = DateTimeOffset.UtcNow, LastSuccessAt = success, Usage = usage }), ct);
+        {
+            Status = status,
+            CheckedAt = DateTimeOffset.UtcNow,
+            LastSuccessAt = success,
+            Usage = usage
+        }), ct);
         File.Move(path + ".tmp", path, true);
     }
 }

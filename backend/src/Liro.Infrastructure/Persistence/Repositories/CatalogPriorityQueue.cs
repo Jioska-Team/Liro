@@ -9,7 +9,8 @@ public sealed class CatalogPriorityQueue(LiroDbContext db) : ICatalogPriorityQue
 {
     public async Task EnqueueAsync(IReadOnlyCollection<CatalogItemKey> keys, DateTime detectedAtUtc, CancellationToken cancellationToken)
     {
-        if (detectedAtUtc.Kind != DateTimeKind.Utc) throw new ArgumentException("UTC required.", nameof(detectedAtUtc));
+        if (detectedAtUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("UTC required.", nameof(detectedAtUtc));
         foreach (var key in keys.Distinct())
         {
             key.Validate();

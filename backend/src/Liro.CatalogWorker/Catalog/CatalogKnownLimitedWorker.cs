@@ -12,7 +12,8 @@ public sealed class CatalogKnownLimitedWorker(IServiceScopeFactory scopes, IOpti
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        if (!settings.Value.KnownLimitedMonitorEnabled) return;
+        if (!settings.Value.KnownLimitedMonitorEnabled)
+            return;
         var nextSeed = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
@@ -30,7 +31,8 @@ public sealed class CatalogKnownLimitedWorker(IServiceScopeFactory scopes, IOpti
                         scope.ServiceProvider.GetService<RobloxCatalogSession>()?.SharedQueryCount ?? 0);
                     nextSeed = DateTime.UtcNow.AddMinutes(1);
                 }
-                if (await PollAsync(ct) == 0) await Task.Delay(TimeSpan.FromSeconds(5), ct);
+                if (await PollAsync(ct) == 0)
+                    await Task.Delay(TimeSpan.FromSeconds(5), ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { return; }
             catch (RobloxRateLimitedException ex) { await CatalogWorkerDelay.WaitForRateLimitAsync(ex, settings.Value.RetryDelay, logger, ct); }
@@ -50,7 +52,8 @@ public sealed class CatalogKnownLimitedWorker(IServiceScopeFactory scopes, IOpti
         using var scope = scopes.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<ICatalogLimitedWatchlist>();
         var entries = (await store.ClaimAsync(DateTime.UtcNow, options.KnownLimitedBatchSize, TimeSpan.FromMinutes(5), ct)).ToList();
-        if (entries.Count == 0) return 0;
+        if (entries.Count == 0)
+            return 0;
         var started = Stopwatch.GetTimestamp();
         try
         {
@@ -67,9 +70,11 @@ public sealed class CatalogKnownLimitedWorker(IServiceScopeFactory scopes, IOpti
                         results[entry.Key] = new(recent, null);
                 inspected = entries.Count;
                 var slots = options.KnownLimitedBatchSize - (entries.Count - results.Count);
-                if (slots <= 0 || claims == 9) break;
+                if (slots <= 0 || claims == 9)
+                    break;
                 var more = await store.ClaimAsync(DateTime.UtcNow, slots, TimeSpan.FromMinutes(5), ct);
-                if (more.Count == 0) break;
+                if (more.Count == 0)
+                    break;
                 entries.AddRange(more);
             }
             // A search may have completed during the extra claims. Recheck before building

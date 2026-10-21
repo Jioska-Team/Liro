@@ -27,9 +27,8 @@ public sealed class DatabaseInitializationService(IServiceScopeFactory scopes, I
                     throw new InvalidOperationException("Database migrations are pending. Apply the backend migrations before starting services.");
                 }
 
-                var foreignItems = CatalogOwnershipQueries.ForeignItemsWithoutOfficialBundle(db.Items);
-                var deleted = await CatalogItemDeletion.DeleteAsync(db, foreignItems, cancellationToken);
-                logger.LogInformation("Se eliminaron {Count} artículos de otros creadores sin relación con paquetes oficiales.", deleted);
+                // Startup must not delete catalog rows or cascade into any historical series.
+                // Ownership filtering belongs to reads; destructive maintenance is an explicit operation.
                 var policy = scope.ServiceProvider.GetRequiredService<CatalogRefreshPolicy>();
                 var interval = policy.Interval;
                 var rescheduled = await db.Items

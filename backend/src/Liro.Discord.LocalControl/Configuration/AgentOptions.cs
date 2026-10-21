@@ -5,19 +5,49 @@ namespace Liro.Discord.LocalControl.Configuration;
 public sealed class AgentOptions
 {
     public string BackendPath { get; set; } = "";
-    public ulong ApplicationId { get; set; }
-    public ulong GuildId { get; set; }
-    public ulong ChannelId { get; set; }
-    public ulong RoleId { get; set; }
-    public ulong OwnerUserId { get; set; }
-    public bool ShareAspireInChannel { get; set; }
-    public ulong PanelMessageId { get; set; }
-    public int? InterfaceIndex { get; set; }
-    public string? DockerDesktopPath { get; set; }
+    public ulong ApplicationId
+    {
+        get; set;
+    }
+    public ulong GuildId
+    {
+        get; set;
+    }
+    public ulong ChannelId
+    {
+        get; set;
+    }
+    public ulong RoleId
+    {
+        get; set;
+    }
+    public ulong OwnerUserId
+    {
+        get; set;
+    }
+    public bool ShareAspireInChannel
+    {
+        get; set;
+    }
+    public ulong PanelMessageId
+    {
+        get; set;
+    }
+    public int? InterfaceIndex
+    {
+        get; set;
+    }
+    public string? DockerDesktopPath
+    {
+        get; set;
+    }
 
     public static string LocalDirectory
     {
-        get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liro", "DevelopmentAgent"); }
+        get
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liro", "DevelopmentAgent");
+        }
     }
 
     public static AgentOptions Load(string localDirectory)

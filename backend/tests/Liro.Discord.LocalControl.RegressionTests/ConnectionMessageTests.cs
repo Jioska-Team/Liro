@@ -39,13 +39,18 @@ internal static class ConnectionMessageTests
             var directory = Path.Combine(AppContext.BaseDirectory, "liro-connection-tests-" + Guid.NewGuid().ToString("N"));
             try
             {
-                var transport = new Transport(); var store = new ConnectionMessageStore(directory, 1, 2, transport);
+                var transport = new Transport();
+                var store = new ConnectionMessageStore(directory, 1, 2, transport);
                 await store.ShowAsync("API", default);
                 transport.Exists = false;
                 await store.ShowAsync("API nueva", default);
                 Check(transport.Created == 2, "No recuperó mensaje borrado");
                 transport.FailDelete = true;
-                try { await store.ClearAsync(default); } catch (IOException) { }
+                try
+                {
+                    await store.ClearAsync(default);
+                }
+                catch (IOException) { }
                 Check(File.Exists(Path.Combine(directory, "connection-message.json")), "Perdió identificador tras fallo");
                 transport.FailDelete = false;
                 await new ConnectionMessageStore(directory, 1, 2, transport).ClearAsync(default);
@@ -59,7 +64,8 @@ internal static class ConnectionMessageTests
         suite.AsyncTest("Canal autorizado recibe datos limpios y Aspire solo si se habilitó compartir", async () =>
         {
             var options = new AgentOptions { ShareAspireInChannel = true, OwnerUserId = 7 };
-            var provider = new Dashboard(); var coordinator = new Coordinator();
+            var provider = new Dashboard();
+            var coordinator = new Coordinator();
             var handler = new InteractionHandler(options, coordinator,
                 new LocalAgentLog(Path.Combine(AppContext.BaseDirectory, "test-logs")), new DashboardInteractionHandler(options, provider));
             var reply = new Reply();
@@ -78,13 +84,33 @@ internal static class ConnectionMessageTests
             Check(reply.Cleared == 1, "No limpia tras Stop confirmado");
         });
     }
-    private static void Check(bool value, string message) { if (!value) throw new Exception(message); }
+    private static void Check(bool value, string message)
+    {
+        if (!value)
+            throw new Exception(message);
+    }
     private sealed class Transport : IConnectionMessageTransport
     {
         public int Created, Updated, Deleted; public bool Exists, FailDelete;
-        public Task<ulong> CreateAsync(string content, CancellationToken token) { Created++; Exists = true; return Task.FromResult((ulong)(10 + Created)); }
-        public Task<bool> UpdateAsync(ulong id, string content, CancellationToken token) { Updated++; return Task.FromResult(Exists); }
-        public Task DeleteAsync(ulong id, CancellationToken token) { if (FailDelete) throw new IOException(); Deleted++; Exists = false; return Task.CompletedTask; }
+        public Task<ulong> CreateAsync(string content, CancellationToken token)
+        {
+            Created++;
+            Exists = true;
+            return Task.FromResult((ulong)(10 + Created));
+        }
+        public Task<bool> UpdateAsync(ulong id, string content, CancellationToken token)
+        {
+            Updated++;
+            return Task.FromResult(Exists);
+        }
+        public Task DeleteAsync(ulong id, CancellationToken token)
+        {
+            if (FailDelete)
+                throw new IOException();
+            Deleted++;
+            Exists = false;
+            return Task.CompletedTask;
+        }
     }
     private sealed class Dashboard : IDashboardLoginProvider
     {
@@ -104,8 +130,17 @@ internal static class ConnectionMessageTests
         public Task DeferAsync() => Task.CompletedTask;
         public Task DenyAsync() => Task.CompletedTask;
         public Task CompleteAsync(string content) => Task.CompletedTask;
-        public Task ShowConnectionsAsync(string shared, string personal) { Shared = shared; Private = personal; return Task.CompletedTask; }
-        public Task ClearConnectionsAsync() { Cleared++; return Task.CompletedTask; }
+        public Task ShowConnectionsAsync(string shared, string personal)
+        {
+            Shared = shared;
+            Private = personal;
+            return Task.CompletedTask;
+        }
+        public Task ClearConnectionsAsync()
+        {
+            Cleared++;
+            return Task.CompletedTask;
+        }
     }
 }
 

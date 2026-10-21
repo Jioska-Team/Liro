@@ -10,9 +10,11 @@ public sealed class RobloxComponentClient(HttpClient http) : IRobloxComponentCli
 {
     public async Task<RobloxCatalogItem?> GetAssetAsync(long assetId, CancellationToken ct)
     {
-        if (assetId <= 0) throw new ArgumentOutOfRangeException(nameof(assetId));
+        if (assetId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(assetId));
         using var response = await http.GetAsync($"v2/assets/{assetId}/details", ct);
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.BadRequest) return null;
+        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.BadRequest)
+            return null;
         response.EnsureSuccessStatusCode();
         using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         return Map(document.RootElement, assetId);
@@ -22,7 +24,8 @@ public sealed class RobloxComponentClient(HttpClient http) : IRobloxComponentCli
     {
         try
         {
-            if (value.GetProperty("AssetId").GetInt64() != assetId) throw new JsonException("La identidad del componente no coincide.");
+            if (value.GetProperty("AssetId").GetInt64() != assetId)
+                throw new JsonException("La identidad del componente no coincide.");
             var name = value.GetProperty("Name").GetString();
             var creator = value.GetProperty("Creator");
             var creatorId = creator.GetProperty("CreatorTargetId").GetInt64();
@@ -43,17 +46,23 @@ public sealed class RobloxComponentClient(HttpClient http) : IRobloxComponentCli
             }
             return new(assetId, name, collectibleId, status)
             {
-                Source = "RobloxComponentDetails", ObservedAtUtc = DateTime.UtcNow,
+                Source = "RobloxComponentDetails",
+                ObservedAtUtc = DateTime.UtcNow,
                 Details = new()
                 {
-                    CreatorId = creatorId, CreatorType = creatorType, CreatorName = creator.GetProperty("Name").GetString(),
-                    Description = value.GetProperty("Description").GetString(), AssetTypeId = assetType,
+                    CreatorId = creatorId,
+                    CreatorType = creatorType,
+                    CreatorName = creator.GetProperty("Name").GetString(),
+                    Description = value.GetProperty("Description").GetString(),
+                    AssetTypeId = assetType,
                     CreatedAtUtc = value.GetProperty("Created").GetDateTime().ToUniversalTime(),
                     Restrictions = unique ? ["LimitedUnique"] : limited ? ["Limited"] : []
                 }
             };
         }
         catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
-        { throw new JsonException("Respuesta inválida de detalles del componente.", ex); }
+        {
+            throw new JsonException("Respuesta inválida de detalles del componente.", ex);
+        }
     }
 }

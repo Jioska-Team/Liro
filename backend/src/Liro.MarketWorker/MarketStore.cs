@@ -6,9 +6,18 @@ namespace Liro.MarketWorker;
 
 public sealed class MarketClaim
 {
-    public Guid ItemId { get; set; }
-    public Guid CollectibleItemId { get; set; }
-    public Guid LeaseId { get; set; }
+    public Guid ItemId
+    {
+        get; set;
+    }
+    public Guid CollectibleItemId
+    {
+        get; set;
+    }
+    public Guid LeaseId
+    {
+        get; set;
+    }
 }
 
 public sealed class MarketStore(LiroDbContext db)
@@ -73,6 +82,8 @@ public sealed class MarketStore(LiroDbContext db)
     {
         var lease = Guid.NewGuid();
         var plan = schedule ?? new MarketOptions();
+        // Keep the reserved background turn first, then prefer due very-active items over
+        // the older high-activity backlog. Eligibility, cooldowns and leases still apply.
         var rows = await db.Database.SqlQuery<MarketClaim>($"""
             WITH candidate AS (
                 SELECT w."ItemId" FROM "MarketWatches" w JOIN "Items" i ON i."Id" = w."ItemId"
@@ -91,6 +102,7 @@ public sealed class MarketStore(LiroDbContext db)
                   AND i."CreatorId" = 1 AND i."CreatorType" = 'User'
                   AND i."MarketStatus" IN ('Limited', 'LimitedUnique') AND i."CollectibleItemId" IS NOT NULL
                 ORDER BY CASE WHEN (w."Activity" IN ('MuyAlta','Alta')) = {!preferBackground} THEN 0 ELSE 1 END,
+                    CASE WHEN w."Activity"='MuyAlta' THEN 0 ELSE 1 END,
                     q.due, w."ItemId" FOR UPDATE OF w SKIP LOCKED LIMIT 1
             ), claimed AS (
                 UPDATE "MarketWatches" w SET "LeaseId" = {lease}, "LeaseUntilUtc" = NOW() + INTERVAL '5 minutes',
@@ -109,8 +121,10 @@ public sealed class MarketStore(LiroDbContext db)
             AND "LeaseUntilUtc" > NOW() FOR UPDATE
             """).ToListAsync(ct);
         var watch = rows.SingleOrDefault();
-        if (watch is null) return false;
-        if (watch.LastSuccessAtUtc > observation.ObservedAtUtc) return false;
+        if (watch is null)
+            return false;
+        if (watch.LastSuccessAtUtc > observation.ObservedAtUtc)
+            return false;
         if (observation.Points.Count > 0)
         {
             var points = observation.Points.OrderBy(p => p.Metric, StringComparer.Ordinal).ThenBy(p => p.PeriodUtc).ToArray();
@@ -130,7 +144,12 @@ public sealed class MarketStore(LiroDbContext db)
         if (observation.Rap is { } rap)
         {
             if (watch.RecentAveragePrice != rap)
-                db.Set<MarketRapSnapshot>().Add(new() { ItemId = claim.ItemId, Value = rap, ObservedAtUtc = observation.ObservedAtUtc });
+                db.Set<MarketRapSnapshot>().Add(new()
+                {
+                    ItemId = claim.ItemId,
+                    Value = rap,
+                    ObservedAtUtc = observation.ObservedAtUtc
+                });
             watch.RecentAveragePrice = rap;
             watch.RapObservedAtUtc = observation.ObservedAtUtc;
         }
@@ -141,7 +160,8 @@ public sealed class MarketStore(LiroDbContext db)
         watch.LastSuccessAtUtc = observation.ObservedAtUtc;
         watch.ConsecutiveFailures = 0;
         watch.LastErrorCode = null;
-        watch.LeaseId = null; watch.LeaseUntilUtc = null;
+        watch.LeaseId = null;
+        watch.LeaseUntilUtc = null;
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return true;
@@ -152,7 +172,7 @@ public sealed class MarketStore(LiroDbContext db)
             UPDATE "MarketWatches" SET "LeaseId"=NULL,
               "LeaseUntilUtc"=CASE WHEN {code.StartsWith("Cupo", StringComparison.Ordinal)} THEN NOW() + {minimumDelay} ELSE NULL END,
               "LastErrorCode"={code},
-              "ConsecutiveFailures"="ConsecutiveFailures" + { (failure ? 1 : 0) },
+              "ConsecutiveFailures"="ConsecutiveFailures" + {(failure ? 1 : 0)},
               "NextCheckAtUtc"=CASE WHEN {code.StartsWith("Cupo", StringComparison.Ordinal)} THEN "NextCheckAtUtc"
               ELSE NOW() + GREATEST({minimumDelay},
                 CASE WHEN {failure} THEN INTERVAL '1 minute' * LEAST(180, power(2, LEAST("ConsecutiveFailures", 8)))
