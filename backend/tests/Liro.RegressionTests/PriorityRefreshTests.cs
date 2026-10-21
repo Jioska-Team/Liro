@@ -387,8 +387,7 @@ internal static class PriorityRefreshTests
         public TaskCompletionSource AllSaved { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(Items.GetValueOrDefault(key));
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Items.Values.FirstOrDefault(x => x.Id == id));
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => GetByCatalogIdAsync(new(id), ct);
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(new(id)));
+        public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(key));
         public Task AddAsync(Item item, CancellationToken ct = default) => UpdateAsync(item, ct);
         public Task UpdateAsync(Item item, CancellationToken ct = default)
         {
@@ -397,17 +396,16 @@ internal static class PriorityRefreshTests
                 AllSaved.TrySetResult();
             return Task.CompletedTask;
         }
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default)
+        public Task DeleteAsync(CatalogItemKey key, CancellationToken ct = default)
         {
-            Items.Remove(new(id));
+            Items.Remove(key);
             return Task.CompletedTask;
         }
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default)
+        public Task DeferRefreshAsync(CatalogItemKey key, DateTime time, CancellationToken ct = default)
         {
-            Items[new(id)].MarkChecked(time, TimeSpan.FromMinutes(30));
+            Items[key].MarkChecked(time, TimeSpan.FromMinutes(30));
             return Task.CompletedTask;
         }
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime now, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>(Items.Values.Where(x => x.NextRefreshAt <= now).Take(limit).Select(x => x.RobloxAssetId).ToArray());
         public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime now, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogItemKey>>(Items.Where(x => x.Value.NextRefreshAt <= now).Take(limit).Select(x => x.Key).ToArray());
     }
     private sealed class TestCatalog : IRobloxCatalogClient
@@ -435,21 +433,18 @@ internal static class PriorityRefreshTests
     private sealed class TestFailures : ICatalogImportFailureStore
     {
         public HashSet<CatalogItemKey> Blocked { get; } = [];
-        public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken ct) => CanAttemptAsync(new CatalogItemKey(id), now, ct);
         public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken ct) => Task.FromResult(!Blocked.Contains(key));
-        public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken ct) => RecordFailureAsync(new CatalogItemKey(id), error, now, ct);
         public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken ct)
         {
             Blocked.Add(key);
             return Task.CompletedTask;
         }
-        public Task ResolveAsync(long id, CancellationToken ct) => ResolveAsync(new CatalogItemKey(id), ct);
         public Task ResolveAsync(CatalogItemKey key, CancellationToken ct)
         {
             Blocked.Remove(key);
             return Task.CompletedTask;
         }
-        public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<long>>([]);
+        public Task<IReadOnlyList<CatalogItemKey>> GetDueItemsAsync(DateTime now, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogItemKey>>([]);
     }
     private sealed class TestDiscovery : IRobloxCatalogDiscoveryClient
     {

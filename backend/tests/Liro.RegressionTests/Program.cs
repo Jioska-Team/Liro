@@ -19,6 +19,7 @@ if (args.Length == 1 && args[0] == "--catalog-refactor-only")
 {
     var targeted = new RegressionSuite();
     DatabaseBatchTests.Register(targeted);
+    CatalogKeyContractTests.Register(targeted);
     BundleTests.Register(targeted);
     SearchDetailsTests.Register(targeted);
     BatchTests.Register(targeted);
@@ -73,6 +74,7 @@ CatalogTests.Register(suite);
 PriorityRefreshTests.Register(suite);
 SearchDetailsTests.Register(suite);
 DatabaseBatchTests.Register(suite);
+CatalogKeyContractTests.Register(suite);
 BundleTests.Register(suite);
 BatchTests.Register(suite);
 CoverageTests.Register(suite);

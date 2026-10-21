@@ -52,8 +52,8 @@ internal static class BundleComponentOwnershipTests
                     "Component details were requested repeatedly or with different identities");
                 Check.That(writer.Keys.SequenceEqual(scenario.Accepted ? keys : []),
                     "Validated components were lost or unlinked components reached the writer");
-                var failed = await failures.GetDueAsync(DateTime.UtcNow, 10, default);
-                Check.That(failed.SequenceEqual(scenario.Accepted ? [] : keys.Select(key => key.Id)),
+                var failed = await failures.GetDueItemsAsync(DateTime.UtcNow, 10, default);
+                Check.That(failed.SequenceEqual(scenario.Accepted ? [] : keys),
                     "Accepted component was marked failed or unlinked component was not rejected");
                 Check.That(browse.Synchronizations == 2, "Relation reconciliation was changed");
             });
@@ -115,12 +115,12 @@ internal static class BundleComponentOwnershipTests
             return Task.FromResult(linked);
         }
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task DeferRefreshAsync(CatalogItemKey key, DateTime time, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task DeleteAsync(CatalogItemKey key, CancellationToken ct = default) => throw new NotSupportedException();
         public Task AddAsync(Item item, CancellationToken ct = default) => throw new NotSupportedException();
         public Task UpdateAsync(Item item, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime time, int limit, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime time, int limit, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

@@ -1,3 +1,4 @@
+using Liro.Domain.Catalog.Models;
 using Liro.Application.Catalog.Repositories;
 using Liro.Domain.Catalog.Entities;
 
@@ -7,17 +8,17 @@ sealed class MemoryRepository(Item item) : IItemRepository
 {
     public int Saves;
     public List<long> DeletedAssetIds { get; } = [];
-    public Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    public Task DeleteAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
-        DeletedAssetIds.Add(assetId);
+        DeletedAssetIds.Add(key.Id);
         return Task.CompletedTask;
     }
     public List<long> SavedAssetIds { get; } = [];
 
-    public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
+    public Task DeferRefreshAsync(CatalogItemKey key, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
     public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult<Item?>(id == item.Id ? item : null);
-    public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult<Item?>(id == item.RobloxAssetId ? item : null);
-    public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(true);
+    public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult<Item?>(key.Id == item.RobloxAssetId && key.Type == item.ItemType ? item : null);
+    public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(true);
     public Task AddAsync(Item i, CancellationToken ct = default)
     {
         Saves++;
@@ -32,5 +33,5 @@ sealed class MemoryRepository(Item item) : IItemRepository
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime t, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>([]);
+    public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime t, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogItemKey>>([]);
 }

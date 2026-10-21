@@ -131,10 +131,9 @@ internal static class ImportRouteTests
     private sealed class Failures : ICatalogImportFailureStore
     {
         public Task ResolveAsync(CatalogItemKey key, CancellationToken ct) => Task.CompletedTask;
-        public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken ct) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken ct) => throw new NotSupportedException();
-        public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken ct) => throw new NotSupportedException();
-        public Task ResolveAsync(long id, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogItemKey>> GetDueItemsAsync(DateTime now, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken ct) => throw new NotSupportedException();
     }
     private sealed class Remote : IRobloxCatalogClient
     {
@@ -159,17 +158,16 @@ internal static class ImportRouteTests
     {
         public List<Item> Items { get; } = [];
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Items.FirstOrDefault(x => x.Id == id));
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => GetByCatalogIdAsync(new(id), ct);
         public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(Items.FirstOrDefault(x => x.RobloxAssetId == key.Id && x.ItemType == key.Type));
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(Items.Any(x => x.RobloxAssetId == id && x.ItemType == CatalogItemType.Asset));
+        public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(Items.Any(x => x.RobloxAssetId == key.Id && x.ItemType == key.Type));
         public Task AddAsync(Item item, CancellationToken ct = default)
         {
             Items.Add(item);
             return Task.CompletedTask;
         }
         public Task UpdateAsync(Item item, CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default) => throw new InvalidOperationException("No deletion expected");
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime time, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>([]);
+        public Task DeferRefreshAsync(CatalogItemKey key, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
+        public Task DeleteAsync(CatalogItemKey key, CancellationToken ct = default) => throw new InvalidOperationException("No deletion expected");
+        public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime time, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogItemKey>>([]);
     }
 }

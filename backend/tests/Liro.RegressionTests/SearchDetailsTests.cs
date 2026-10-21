@@ -248,13 +248,10 @@ internal static class SearchDetailsTests
     }
     private sealed class Failures : ICatalogImportFailureStore
     {
-        public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken ct) => Task.FromResult(true);
         public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken ct) => Task.FromResult(true);
-        public Task ResolveAsync(long id, CancellationToken ct) => Task.CompletedTask;
         public Task ResolveAsync(CatalogItemKey key, CancellationToken ct) => Task.CompletedTask;
-        public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken ct) => throw new Exception(error);
         public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken ct) => throw new Exception(error);
-        public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<long>>([]);
+        public Task<IReadOnlyList<CatalogItemKey>> GetDueItemsAsync(DateTime now, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<CatalogItemKey>>([]);
     }
     private sealed class FallbackCatalog : IRobloxCatalogClient
     {
@@ -295,9 +292,8 @@ internal static class SearchDetailsTests
             OnRead?.Invoke();
             return Task.FromResult(Items.GetValueOrDefault(key));
         }
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken ct = default) => GetByCatalogIdAsync(new(id), ct);
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Items.Values.FirstOrDefault(x => x.Id == id));
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(new(id)));
+        public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken ct = default) => Task.FromResult(Items.ContainsKey(key));
         public Task AddAsync(Item item, CancellationToken ct = default) => UpdateAsync(item, ct);
         public Task UpdateAsync(Item item, CancellationToken ct = default)
         {
@@ -305,12 +301,12 @@ internal static class SearchDetailsTests
             Items[new(item.RobloxAssetId, item.ItemType)] = item;
             return Task.CompletedTask;
         }
-        public Task DeleteByAssetIdAsync(long id, CancellationToken ct = default)
+        public Task DeleteAsync(CatalogItemKey key, CancellationToken ct = default)
         {
-            Items.Remove(new(id));
+            Items.Remove(key);
             return Task.CompletedTask;
         }
-        public Task DeferRefreshAsync(long id, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime time, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<long>>([]);
+        public Task DeferRefreshAsync(CatalogItemKey key, DateTime time, CancellationToken ct = default) => Task.CompletedTask;
+        public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime time, int limit, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CatalogItemKey>>([]);
     }
 }

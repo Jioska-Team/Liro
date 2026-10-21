@@ -1,3 +1,4 @@
+using Liro.Domain.Catalog.Models;
 using System.Net;
 using System.Text.Json;
 using Liro.Application.Catalog.Services;
@@ -155,7 +156,7 @@ internal static class RobloxTests
             var exception = await Check.ThrowsAsync<HttpRequestException>(() => processor.ProcessAsync(1, false, CancellationToken.None));
             Check.That(exception.StatusCode == HttpStatusCode.TooManyRequests, "The 429 status was not propagated");
             Check.That(
-                await failures.CanAttemptAsync(1, DateTime.UtcNow, CancellationToken.None),
+                await failures.CanAttemptAsync(new CatalogItemKey(1), DateTime.UtcNow, CancellationToken.None),
                 "A 429 consumed the asset failure budget");
         });
         foreach (var useDate in new[]

@@ -48,7 +48,7 @@ internal static class BatchTests
             var options = new CatalogWorkerOptions { ItemDelay = TimeSpan.Zero };
             await CatalogBatchProcessor.ProcessAsync(scopes, new CatalogItemKey[] { new(2), new(3), new(4) }, true, options, default);
             Check.That(repository.SavedAssetIds.SequenceEqual(new long[] { 2 }), "Partial response saved invalid items");
-            Check.That((await failures.GetDueAsync(DateTime.UtcNow, 10, default)).Order().SequenceEqual(new long[] { 3, 4 }), "Healthy item queued or failed item lost");
+            Check.That((await failures.GetDueItemsAsync(DateTime.UtcNow, 10, default)).OrderBy(key => key.Id).SequenceEqual(new CatalogItemKey[] { new(3), new(4) }), "Healthy item queued or failed item lost");
             await CatalogBatchProcessor.ProcessAsync(scopes, new CatalogItemKey[] { new(1) }, false, options, default);
             Check.That(calls == 2 && repository.SavedAssetIds.SequenceEqual(new long[] { 2, 1 }), "Refresh did not update existing item");
         });
@@ -94,7 +94,7 @@ internal static class BatchTests
             using var provider = Provider(new MemoryRepository(Fixtures.Item()), failures, new RobloxCatalogClient(http));
             var error = await Check.ThrowsAsync<HttpRequestException>(() => CatalogBatchProcessor.ProcessAsync(provider.GetRequiredService<IServiceScopeFactory>(),
                 new CatalogItemKey[] { new(2), new(3), new(4) }, true, new CatalogWorkerOptions { DetailsBatchSize = 2, ItemDelay = TimeSpan.Zero }, default));
-            Check.That(error.StatusCode == HttpStatusCode.TooManyRequests && calls == 1 && (await failures.GetDueAsync(DateTime.UtcNow, 10, default)).Count == 0, "429 consumed item retries or sent more batches");
+            Check.That(error.StatusCode == HttpStatusCode.TooManyRequests && calls == 1 && (await failures.GetDueItemsAsync(DateTime.UtcNow, 10, default)).Count == 0, "429 consumed item retries or sent more batches");
         });
         suite.AsyncTest("Batch duplicate results fail only that identity", async () =>
         {

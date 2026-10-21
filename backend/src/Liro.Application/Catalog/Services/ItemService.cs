@@ -23,7 +23,7 @@ public sealed class ItemService
 
     public Task<Item?> GetByAssetIdAsync(long robloxAssetId, CancellationToken cancellationToken = default)
     {
-        return _repository.GetByAssetIdAsync(robloxAssetId, cancellationToken);
+        return _repository.GetByCatalogIdAsync(new CatalogItemKey(robloxAssetId), cancellationToken);
     }
 
     public async Task<Item?> GetByBundleIdAsync(long bundleId, CancellationToken cancellationToken = default)
@@ -33,7 +33,7 @@ public sealed class ItemService
     }
     public async Task<Item?> CreateAsync(long robloxAssetId, string name, Guid? collectibleItemId, ItemMarketStatus marketStatus, CancellationToken cancellationToken = default)
     {
-        if (await _repository.ExistsByAssetIdAsync(robloxAssetId, cancellationToken))
+        if (await _repository.ExistsByCatalogIdAsync(new CatalogItemKey(robloxAssetId), cancellationToken))
         {
             return null;
         }

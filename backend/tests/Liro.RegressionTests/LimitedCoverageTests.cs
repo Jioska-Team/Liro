@@ -169,7 +169,7 @@ internal static class LimitedCoverageTests
             using var worker = Worker(provider);
             await worker.PollAsync(default);
             Check.That(watch.Completions.Any(x => x.Count == 1 && x.Success) && watch.Completions.Any(x => x.Count == 1 && !x.Success)
-                && (await failures.GetDueAsync(DateTime.UtcNow, 100, default)).SequenceEqual(new long[] { 2 }), "Omitted ID was lost or falsely confirmed");
+                && (await failures.GetDueItemsAsync(DateTime.UtcNow, 100, default)).SequenceEqual(new CatalogItemKey[] { new(2) }), "Omitted ID was lost or falsely confirmed");
         });
         suite.AsyncTest("Empty known watch performs no provider requests", async () =>
         {

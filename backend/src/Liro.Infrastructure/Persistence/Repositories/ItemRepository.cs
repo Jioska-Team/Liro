@@ -37,10 +37,10 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         return item;
     }
 
-    public async Task<bool> ExistsByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
+    public async Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default)
     {
         var exists = await dbContext.Items
-            .AnyAsync(x => x.RobloxAssetId == assetId && x.ItemType == CatalogItemType.Asset, cancellationToken);
+            .AnyAsync(x => x.RobloxAssetId == key.Id && x.ItemType == key.Type, cancellationToken);
 
         return exists;
     }
@@ -84,27 +84,6 @@ public sealed class ItemRepository(LiroDbContext dbContext) : IItemRepository
         await CatalogItemDeletion.DeleteAsync(dbContext, dbContext.Items.Where(item => item.RobloxAssetId == key.Id && item.ItemType == key.Type), cancellationToken);
     }
 
-    public async Task<Item?> GetByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
-    {
-        var item = await GetByCatalogIdAsync(new CatalogItemKey(assetId), cancellationToken);
-        return item;
-    }
-    public async Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime dueAtUtc, int limit, CancellationToken cancellationToken = default)
-    {
-        var ids = await dbContext.Items.AsNoTracking()
-            .Where(x => x.ItemType == CatalogItemType.Asset && x.NextRefreshAt <= dueAtUtc
-                && !dbContext.Set<CatalogImportFailure>().Any(f => f.ItemType == x.ItemType && f.AssetId == x.RobloxAssetId))
-            .OrderBy(x => x.NextRefreshAt).ThenBy(x => x.Id).Select(x => x.RobloxAssetId).Take(limit).ToListAsync(cancellationToken);
-        return ids;
-    }
-    public async Task DeferRefreshAsync(long assetId, DateTime retryAtUtc, CancellationToken cancellationToken = default)
-    {
-        await DeferRefreshAsync(new CatalogItemKey(assetId), retryAtUtc, cancellationToken);
-    }
-    public async Task DeleteByAssetIdAsync(long assetId, CancellationToken cancellationToken = default)
-    {
-        await DeleteAsync(new CatalogItemKey(assetId), cancellationToken);
-    }
     private async Task SaveAsync(CancellationToken cancellationToken)
     {
         try

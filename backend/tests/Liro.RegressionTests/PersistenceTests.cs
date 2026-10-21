@@ -1,3 +1,4 @@
+using Liro.Domain.Catalog.Models;
 using System.Text.Json;
 using Liro.Domain.Catalog.Entities;
 using Liro.Domain.Catalog.Enums;
@@ -19,7 +20,7 @@ internal static class PersistenceTests
                     .AddInterceptors(new DeletionConnectionProbe(), new DeletionTransactionProbe(probe), new DeletionCommandProbe(probe)).Options;
                 using var db = new Liro.Infrastructure.Persistence.LiroDbContext(options);
                 var repository = new Liro.Infrastructure.Persistence.Repositories.ItemRepository(db);
-                await repository.DeleteByAssetIdAsync(1);
+                await repository.DeleteAsync(new CatalogItemKey(1));
                 Check.That(probe.Committed && probe.Disposed, "Transaction did not commit and dispose");
                 Check.That(probe.Queries == (mode == "retry" ? 2 : 1), "Retry did not restart the whole transaction");
                 Check.That(probe.DeleteCalls == (mode == "empty" ? 0 : mode == "retry" ? 6 : 4), "Unexpected delete operation count");

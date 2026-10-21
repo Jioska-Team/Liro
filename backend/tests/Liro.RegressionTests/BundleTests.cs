@@ -22,6 +22,22 @@ internal static class BundleTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("ItemService preserves asset compatibility when a bundle has the same ID", async () =>
+        {
+            var repository = new TypedRepository();
+            var bundle = new Item(126, "Bundle", itemType: CatalogItemType.Bundle);
+            await repository.AddAsync(bundle);
+            var service = new ItemService(repository);
+
+            Check.That(await service.GetByAssetIdAsync(126) is null, "An asset lookup returned a bundle with the same ID");
+            Check.That(ReferenceEquals(await service.GetByBundleIdAsync(126), bundle), "Bundle lookup lost its type");
+            var asset = await service.CreateAsync(126, "Asset", null, ItemMarketStatus.Normal);
+            Check.That(asset is not null && asset.ItemType == CatalogItemType.Asset, "A bundle prevented creation of the asset with the same ID");
+            Check.That(ReferenceEquals(await service.GetByAssetIdAsync(126), asset), "Legacy lookup did not select the asset");
+            Check.That(ReferenceEquals(await service.GetByBundleIdAsync(126), bundle), "Asset creation replaced the bundle");
+            Check.That(await service.CreateAsync(126, "Duplicate", null, ItemMarketStatus.Normal) is null && repository.Items.Count == 2,
+                "Existing asset was duplicated or the bundle was removed");
+        });
         suite.AsyncTest("Un componente externo requiere una referencia de paquete oficial y conserva su creador", async () =>
         {
             foreach (var referenced in new[] { false, true })
@@ -154,10 +170,9 @@ internal static class BundleTests
             Keys.Remove(key);
             return Task.CompletedTask;
         }
-        public Task<bool> CanAttemptAsync(long id, DateTime now, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task RecordFailureAsync(long id, string error, DateTime now, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task ResolveAsync(long id, CancellationToken cancellationToken) => throw new Exception("Untyped retry resolution");
+        public Task<bool> CanAttemptAsync(CatalogItemKey key, DateTime now, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogItemKey>> GetDueItemsAsync(DateTime now, int limit, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RecordFailureAsync(CatalogItemKey key, string error, DateTime now, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
     private sealed class TypedRepository : IItemRepository
     {
@@ -166,8 +181,7 @@ internal static class BundleTests
         public Dictionary<CatalogItemKey, Item> Items = [];
         public Task<Item?> GetByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(Items.GetValueOrDefault(key));
         public Task<Item?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Items.Values.FirstOrDefault(x => x.Id == id));
-        public Task<Item?> GetByAssetIdAsync(long id, CancellationToken cancellationToken = default) => GetByCatalogIdAsync(new CatalogItemKey(id), cancellationToken);
-        public Task<bool> ExistsByAssetIdAsync(long id, CancellationToken cancellationToken = default) => Task.FromResult(Items.ContainsKey(new CatalogItemKey(id)));
+        public Task<bool> ExistsByCatalogIdAsync(CatalogItemKey key, CancellationToken cancellationToken = default) => Task.FromResult(Items.ContainsKey(key));
         public Task AddAsync(Item item, CancellationToken cancellationToken = default)
         {
             Items.Add(new CatalogItemKey(item.RobloxAssetId, item.ItemType), item);
@@ -183,9 +197,8 @@ internal static class BundleTests
             Items.Remove(key);
             return Task.CompletedTask;
         }
-        public Task DeleteByAssetIdAsync(long id, CancellationToken cancellationToken = default) => throw new Exception("Untyped delete");
-        public Task DeferRefreshAsync(long id, DateTime retry, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<long>> GetStaleAssetIdsAsync(DateTime due, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DeferRefreshAsync(CatalogItemKey key, DateTime retry, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<CatalogItemKey>> GetStaleItemsAsync(DateTime due, int limit, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }
 

@@ -1,5 +1,4 @@
 using Liro.Domain.Catalog.Models;
-using Liro.Domain.Catalog.Enums;
 using Liro.Application.Catalog.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,25 +53,4 @@ public sealed class CatalogImportFailureStore(LiroDbContext db) : ICatalogImport
             .Where(x => x.AssetId == key.Id && x.ItemType == key.Type)
             .ExecuteDeleteAsync(cancellationToken);
     }
-    public async Task<bool> CanAttemptAsync(long assetId, DateTime now, CancellationToken cancellationToken)
-    {
-        var allowed = await CanAttemptAsync(new CatalogItemKey(assetId), now, cancellationToken);
-        return allowed;
-    }
-    public async Task RecordFailureAsync(long assetId, string error, DateTime now, CancellationToken cancellationToken)
-    {
-        await RecordFailureAsync(new CatalogItemKey(assetId), error, now, cancellationToken);
-    }
-    public async Task ResolveAsync(long assetId, CancellationToken cancellationToken)
-    {
-        await ResolveAsync(new CatalogItemKey(assetId), cancellationToken);
-    }
-    public async Task<IReadOnlyList<long>> GetDueAsync(DateTime now, int limit, CancellationToken cancellationToken)
-    {
-        var ids = await db.Set<CatalogImportFailure>().AsNoTracking()
-            .Where(x => x.ItemType == CatalogItemType.Asset && x.DeadLetteredAtUtc == null && x.NextAttemptAtUtc <= now)
-            .OrderBy(x => x.NextAttemptAtUtc).Select(x => x.AssetId).Take(limit).ToListAsync(cancellationToken);
-        return ids;
-    }
 }
-
