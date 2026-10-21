@@ -14,7 +14,6 @@
     <Project Path="src/Liro.Discord.LocalControl/Liro.Discord.LocalControl.csproj" />
   </Folder>
   <Folder Name="/src/Hosting/">
-    <Project Path="tools/Liro.SandboxMigrator/Liro.SandboxMigrator.csproj" />
     <Project Path="src/Liro.AppHost/Liro.AppHost.csproj" Id="1a830422-7c43-42e4-9a1e-05b5b22825cb" />
     <Project Path="src/Liro.ServiceDefaults/Liro.ServiceDefaults.csproj" />
   </Folder>
