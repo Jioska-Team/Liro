@@ -62,7 +62,7 @@ public sealed class BundleComponentsWorker(IServiceScopeFactory scopes, IOptions
             }
             var item = result?.Item;
             var official = item?.Details?.CreatorId == 1 && item.Details.CreatorType == "User";
-            var referencedComponent = key.Type == CatalogItemType.Asset && item?.Details?.CreatorId > 0
+            var referencedComponent = !official && key.Type == CatalogItemType.Asset && item?.Details?.CreatorId > 0
                 && item.Details.CreatorType is "User" or "Group"
                 && await scope.ServiceProvider.GetRequiredService<IItemRepository>().IsOfficialBundleComponentAsync(key, ct);
             if (result?.Error is null && item is not null && (official || referencedComponent)
