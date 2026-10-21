@@ -14,8 +14,10 @@ public sealed class MarketLanePool(int capacity)
         {
             foreach (var key in active.Where(p => p.Value.IsCompleted).Select(p => p.Key).ToArray())
             {
-                active[key].GetAwaiter().GetResult();
+                var completed = active[key];
                 active.Remove(key);
+                // Observe the failure once, after freeing the lane so the next cycle can recover.
+                completed.GetAwaiter().GetResult();
             }
             if (active.ContainsKey(route) || active.Count >= capacity)
                 return false;

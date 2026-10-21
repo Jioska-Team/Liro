@@ -1,5 +1,12 @@
 using Liro.RegressionTests;
 
+// Explicit unit-only entry point: no PostgreSQL, Valkey, services or external HTTP.
+if (args.Length == 1 && args[0] == "--market-lanes-only")
+{
+    var lanes = new RegressionSuite();
+    MarketConcurrencyTests.RegisterLanes(lanes);
+    return await lanes.RunAsync();
+}
 // Never report a green run after silently omitting database-dependent cases.
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;

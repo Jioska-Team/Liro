@@ -8,7 +8,7 @@ namespace Liro.RegressionTests;
 
 internal static class MarketConcurrencyTests
 {
-    public static void Register(RegressionSuite suite)
+    public static void RegisterLanes(RegressionSuite suite)
     {
         suite.AsyncTest("Mercado limita cinco consultas y no duplica una ruta ocupada", async () =>
         {
@@ -34,6 +34,50 @@ internal static class MarketConcurrencyTests
             Check.That(pool.TryStart("ruta0", () => Task.CompletedTask), "No reutiliza una ruta terminada");
             await pool.DrainAsync();
         });
+        foreach (var canceled in new[] { false, true })
+        {
+            suite.AsyncTest(canceled ? "MarketLanePool_RecoversAfterCancellation" : "MarketLanePool_RecoversAfterFailure", async () =>
+            {
+                var pool = new MarketLanePool(1);
+                using var cancellation = new CancellationTokenSource();
+                cancellation.Cancel();
+                var failure = new InvalidOperationException("Simulated lane failure");
+                Check.That(pool.TryStart("route", () => canceled
+                    ? Task.FromCanceled(cancellation.Token)
+                    : Task.FromException(failure)), "Failed operation was not admitted");
+
+                // Await the pool's task to establish completion without polling or sleeps.
+                try { await pool.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3)); }
+                catch (OperationCanceledException) when (canceled) { }
+                catch (InvalidOperationException error) when (!canceled && ReferenceEquals(error, failure)) { }
+
+                var propagated = false;
+                try { pool.TryStart("route", () => Task.CompletedTask); }
+                catch (OperationCanceledException) when (canceled) { propagated = true; }
+                catch (InvalidOperationException error) when (!canceled && ReferenceEquals(error, failure)) { propagated = true; }
+                Check.That(propagated, "Completed lane failure was silently swallowed");
+
+                var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                try
+                {
+                    Check.That(pool.TryStart("route", () => release.Task), "Failed lane was not reusable");
+                    Check.That(!pool.TryStart("route", () => Task.CompletedTask), "Recovery duplicated an occupied route");
+                    Check.That(!pool.TryStart("other", () => Task.CompletedTask), "Recovery exceeded capacity");
+                }
+                finally
+                {
+                    release.TrySetResult();
+                    await pool.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3));
+                }
+                Check.That(pool.TryStart("other", () => Task.CompletedTask), "Successful recovery left a stale lane");
+                await pool.DrainAsync().WaitAsync(TimeSpan.FromSeconds(3));
+            });
+        }
+    }
+
+    public static void Register(RegressionSuite suite)
+    {
+        RegisterLanes(suite);
         suite.AsyncTest("Mercado escalona salidas sin esperar la respuesta anterior", async () =>
         {
             using var gate = new MarketDispatchGate();
