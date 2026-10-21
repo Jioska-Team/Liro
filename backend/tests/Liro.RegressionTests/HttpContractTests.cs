@@ -26,6 +26,15 @@ internal static class HttpContractTests
             await using var host = await Host.Start();
             using var document = await host.Json("/openapi/v1.json");
             var paths = document.RootElement.GetProperty("paths");
+            foreach (var path in new[] { "/api/v1/catalog", "/api/v1/catalog/feed" })
+            {
+                var parameters = paths.GetProperty(path).GetProperty("get").GetProperty("parameters").EnumerateArray().ToArray();
+                foreach (var name in new[] { "limited", "q", "sort", "direction" })
+                    Check.That(parameters.Any(x => x.GetProperty("name").GetString() == name
+                        && x.GetProperty("in").GetString() == "query"
+                        && (!x.TryGetProperty("required", out var required) || !required.GetBoolean())),
+                        path + " omits optional query parameter " + name);
+            }
             var expectations = new (string Path, string Method, string Status, string Schema, bool Array)[]
             {
                 ("/api/v1/catalog", "get", "200", "CatalogPageResponse", false),

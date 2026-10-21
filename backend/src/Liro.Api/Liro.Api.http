@@ -14,6 +14,14 @@ GET {{baseUrl}}/api/v1/catalog?page=1&pageSize=24
 ### Cursor catalog; pass nextCursor unchanged as after on subsequent requests
 GET {{baseUrl}}/api/v1/catalog/feed?pageSize=24
 
+### Limited and LimitedUnique items, cheapest known resale price first
+GET {{baseUrl}}/api/v1/catalog?limited=limiteds&sort=price&direction=asc&page=1&pageSize=24
+
+### Case-insensitive literal name search (or use q={{assetId}} for an exact Roblox ID)
+GET {{baseUrl}}/api/v1/catalog/feed?limited=limited&sort=rap&direction=desc&q=hat&pageSize=24
+
+### For the next page, keep limited/q/sort/direction and add the returned after token unchanged
+
 ### Stored bundle relationships
 GET {{baseUrl}}/api/v1/catalog/bundles/{{bundleId}}/components
 

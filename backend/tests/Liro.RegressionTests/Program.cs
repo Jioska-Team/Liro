@@ -54,11 +54,20 @@ if (args.Length == 1 && args[0] == "--market-integrity-only")
     return await targeted.RunAsync();
 }
 
+if (args.Length == 1 && args[0] == "--catalog-queries-only")
+{
+    var targeted = new RegressionSuite();
+    CatalogQueryTests.Register(targeted);
+    CatalogReadTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
 var suite = new RegressionSuite();
 ValkeyLossTests.Register(suite);
 if (args.Contains("--valkey-loss-only")) return await suite.RunAsync();
 IntegrationRegistrationTests.Register(suite);
 CatalogReadTests.Register(suite);
+CatalogQueryTests.Register(suite);
 if (args.Contains("--catalog-reads-only")) return await suite.RunAsync();
 ImportRouteTests.Register(suite);
 if (args.Contains("--import-routes-only")) return await suite.RunAsync();

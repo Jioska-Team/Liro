@@ -12,30 +12,43 @@ namespace Liro.Api.Controllers;
 public sealed class CatalogController(ICatalogBrowseRepository repository) : ControllerBase
 {
     [HttpGet]
-    [EndpointDescription("Stored visible catalog. page: 1-10000; pageSize: 1-100 (default 24).")]
+    [EndpointDescription("Stored visible official catalog. page: 1-10000; pageSize: 1-100 (default 24). " + CatalogQuery.Description)]
     [ProducesResponseType<CatalogPageResponse>(200)]
     [ProducesResponseType<ProblemDetails>(400, "application/problem+json", "application/json")]
-    public async Task<IActionResult> Browse([FromQuery] int page = 1, [FromQuery] int pageSize = 24, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Browse([FromQuery] int page = 1, [FromQuery] int pageSize = 24, CancellationToken cancellationToken = default,
+        [FromQuery] string? limited = null, [FromQuery] string? q = null, [FromQuery] string? sort = null, [FromQuery] string? direction = null)
     {
         if (page is < 1 or > 10000 || pageSize is < 1 or > 100)
             return BadRequest(new ProblemDetails { Status = 400, Title = "La página debe estar entre 1 y 10000 y el tamaño entre 1 y 100." });
-        var result = await repository.BrowseAsync(page, pageSize, cancellationToken);
+        if (!CatalogQuery.TryParse(limited, q, sort, direction, out var options))
+            return BadRequest(new ProblemDetails { Status = 400, Title = CatalogQuery.ValidationMessage });
+        var result = options.IsDefault
+            ? await repository.BrowseAsync(page, pageSize, cancellationToken)
+            : await repository.BrowseAsync(page, pageSize, options, cancellationToken);
         return Ok(new CatalogPageResponse(result.Items.Select(ItemResponse.From).ToArray(), page, pageSize, result.HasMore));
     }
 
     [HttpGet("feed")]
-    [EndpointDescription("Stored visible catalog in cursor order. pageSize: 1-100. Pass nextCursor unchanged as after; do not combine with page.")]
+    [EndpointDescription("Stored visible official catalog in cursor order. pageSize: 1-100. Pass nextCursor unchanged as after with the same filters and ordering; do not combine with page. " + CatalogQuery.Description)]
     [ProducesResponseType<CatalogFeedResponse>(200)]
     [ProducesResponseType<ProblemDetails>(400, "application/problem+json", "application/json")]
-    public async Task<IActionResult> Feed([FromQuery] int pageSize = 24, [FromQuery] string? after = null, CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Feed([FromQuery] int pageSize = 24, [FromQuery] string? after = null, CancellationToken cancellationToken = default,
+        [FromQuery] string? limited = null, [FromQuery] string? q = null, [FromQuery] string? sort = null, [FromQuery] string? direction = null)
     {
+        if (!CatalogQuery.TryParse(limited, q, sort, direction, out var options))
+            return BadRequest(new ProblemDetails { Status = 400, Title = CatalogQuery.ValidationMessage });
         if (pageSize is < 1 or > 100 || Request.Query.ContainsKey("page")
             || (Request.Query.ContainsKey("after") && string.IsNullOrEmpty(after))
-            || !CatalogCursorCodec.TryDecode(after, out var cursor))
+            || !CatalogCursorCodec.TryDecode(after, options, out var cursor))
             return BadRequest(new ProblemDetails { Status = 400, Title = "Usa pageSize entre 1 y 100 y el cursor after devuelto por esta ruta; no combines page con cursor." });
-        var result = await repository.BrowseAfterAsync(cursor, pageSize, cancellationToken);
+        var result = options.IsDefault
+            ? await repository.BrowseAfterAsync(cursor, pageSize, cancellationToken)
+            : await repository.BrowseAfterAsync(cursor, pageSize, options, cancellationToken);
         var next = result.HasMore && result.Items.Count > 0
-            ? CatalogCursorCodec.Encode(new CatalogCursor(result.Items[^1].RobloxCreatedAtUtc, result.Items[^1].Id)) : null;
+            ? CatalogCursorCodec.Encode(options.IsDefault
+                ? new CatalogCursor(result.Items[^1].RobloxCreatedAtUtc, result.Items[^1].Id)
+                : result.NextCursor ?? throw new InvalidOperationException("A filtered catalog page must include its continuation position."), options)
+            : null;
         return Ok(new CatalogFeedResponse(result.Items.Select(ItemResponse.From).ToArray(), pageSize, result.HasMore, next));
     }
 
