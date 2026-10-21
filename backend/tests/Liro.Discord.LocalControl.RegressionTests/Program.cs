@@ -2,6 +2,8 @@ using Liro.RegressionTests;
 using Liro.Discord.LocalControl.RegressionTests;
 
 var suite = new RegressionSuite();
+PrivateReplyExpiryTests.Register(suite);
+if (args.Contains("--private-replies-only")) return await suite.RunAsync();
 GatewayDiagnosticsTests.Register(suite);
 if (args.Contains("--gateway-only")) return await suite.RunAsync();
 CommandTimeoutTests.Register(suite);

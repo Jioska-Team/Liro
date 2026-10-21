@@ -187,35 +187,40 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
         finally { pending.TryRemove(key, out _); }
     }
 
-    private sealed class DiscordReply(SocketMessageComponent component, PrivateReplyRegistry registry,
-        ConnectionMessageStore connections, bool sharedAspire, CancellationToken stopping) : IButtonReply
+    private sealed class DiscordReply(ulong userId, Func<string, Task> respond, Func<string, Task> modify, Func<Task> delete,
+        PrivateReplyRegistry registry, ConnectionMessageStore connections, bool sharedAspire, CancellationToken stopping) : IButtonReply
     {
+        public DiscordReply(SocketMessageComponent component, PrivateReplyRegistry registry,
+            ConnectionMessageStore connections, bool sharedAspire, CancellationToken stopping)
+            : this(component.User.Id,
+                message => component.RespondAsync(message, ephemeral: true, allowedMentions: AllowedMentions.None),
+                message => component.ModifyOriginalResponseAsync(properties =>
+                {
+                    properties.Content = message;
+                    properties.AllowedMentions = AllowedMentions.None;
+                }),
+                () => component.DeleteOriginalResponseAsync(), registry, connections, sharedAspire, stopping) { }
+
         private PrivateReplyRegistry.Lease? lease;
         private readonly long connectionVersion = connections.Version;
 
         public async Task DeferAsync()
         {
-            // Component DeferAsync can acknowledge an update to the shared panel.
             // An explicit private response ensures subsequent edits target only this reply.
-            await component.RespondAsync("Consultando...", ephemeral: true, allowedMentions: AllowedMentions.None);
-            lease = await registry.ReplaceAsync(component.User.Id, () => component.DeleteOriginalResponseAsync());
+            await respond("Consultando...");
+            lease = await registry.ReplaceAsync(userId, delete);
+            _ = registry.ExpireAsync(lease, TimeSpan.FromMinutes(10), stopping);
         }
-        public Task DenyAsync() => component.RespondAsync("Acceso no autorizado o agente ocupado.", ephemeral: true, allowedMentions: AllowedMentions.None);
+        public Task DenyAsync() => respond("Acceso no autorizado o agente ocupado.");
         public async Task ShowConnectionsAsync(string sharedMessage, string privateMessage)
         {
+            if (lease is null || !registry.IsCurrent(lease))
+                return;
             await connections.ShowAsync(sharedMessage, stopping, connectionVersion);
             if (sharedAspire || sharedMessage == privateMessage)
-            {
-                await component.DeleteOriginalResponseAsync();
-            }
+                await delete();
             else
-            {
-                await component.ModifyOriginalResponseAsync(properties =>
-                {
-                    properties.Content = privateMessage;
-                    properties.AllowedMentions = AllowedMentions.None;
-                });
-            }
+                await CompleteAsync(privateMessage);
         }
         public async Task ClearConnectionsAsync()
         {
@@ -225,17 +230,9 @@ public sealed class DiscordAgentService(AgentOptions options, LocalCredentialSto
         public async Task CompleteAsync(string message)
         {
             if (lease is null || !registry.IsCurrent(lease))
-            {
                 return;
-            }
-            await component.ModifyOriginalResponseAsync(properties =>
-            {
-                properties.Content = message;
-                properties.AllowedMentions = AllowedMentions.None;
-            });
+            await modify(message);
             _ = registry.ExpireAsync(lease, TimeSpan.FromMinutes(2), stopping);
         }
     }
 }
-
-
