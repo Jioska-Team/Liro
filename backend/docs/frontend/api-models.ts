@@ -86,3 +86,67 @@ export interface ImportCatalogItemRequest {
 
 
 
+/** Fechas de calendario UTC con formato YYYY-MM-DD. */
+export type IsoDate = string;
+export interface CatalogPageResponse {
+  items: ItemResponse[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+export interface CatalogFeedResponse {
+  items: ItemResponse[];
+  pageSize: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}
+export interface BundleComponentsResponse {
+  bundle: ItemResponse;
+  components: ItemResponse[];
+  pendingAssetIds: number[];
+  relationshipsObservedAtUtc: IsoDateTime | null;
+}
+export type ParentBundlesResponse = ItemResponse[];
+export interface DailySalesPoint {
+  dateUtc: IsoDate;
+  averagePriceRobux: number | null;
+  salesVolume: number | null;
+  updatedAtUtc: IsoDateTime;
+}
+export interface RapHistoryPoint {
+  observedAtUtc: IsoDateTime;
+  rap: number;
+}
+export interface DailySalesPage {
+  fromUtc: IsoDate;
+  toUtcExclusive: IsoDate;
+  points: DailySalesPoint[];
+  nextAfter: IsoDate | null;
+}
+export interface RapHistoryPage {
+  fromUtc: IsoDate;
+  toUtcExclusive: IsoDate;
+  points: RapHistoryPoint[];
+  nextAfter: IsoDateTime | null;
+}
+export interface ItemMarketSummary {
+  itemId: Uuid;
+  robloxItemId: number;
+  itemType: 'Asset' | 'Bundle';
+  name: string;
+  marketplaceUrl: string;
+  thumbnailUrl: string | null;
+  lowestResalePriceRobux: number | null;
+  hasResellers: boolean | null;
+  priceObservedAtUtc: IsoDateTime | null;
+  priceSource: string | null;
+  recentAveragePrice: number | null;
+  rapObservedAtUtc: IsoDateTime | null;
+  activity: string | null;
+  dailySales: number | null;
+}
+export interface InfrastructureResponse {
+  postgres: 'ok' | 'error';
+  valkey: 'ok' | 'error';
+  valkeyLatencyMs: number | null;
+}

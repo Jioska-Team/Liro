@@ -5,16 +5,19 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Liro.Api.Controllers;
 
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
 [ApiController]
 [Route("api/v1/items/{id:guid}/market-history")]
 [EnableRateLimiting("market-history-reads")]
 public sealed class ItemMarketSeriesController(ItemService items, IItemMarketSeriesRepository history) : ControllerBase
 {
     [HttpGet("daily-sales")]
-    [ProducesResponseType<DailySalesPage>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [EndpointDescription("Daily UTC series. from inclusive, to exclusive; at most 366 days. limit: 1-500 (default 100). Pass nextAfter as after; keep the same date range.")]
+    [ProducesResponseType<DailySalesPage>(200)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json", "application/json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<IActionResult> Daily(Guid id, CancellationToken cancellationToken,
         [FromQuery] DateOnly? from = null, [FromQuery] DateOnly? to = null,
         [FromQuery] DateOnly? after = null, [FromQuery] int limit = 100)
@@ -28,10 +31,10 @@ public sealed class ItemMarketSeriesController(ItemService items, IItemMarketSer
     }
 
     [HttpGet("rap")]
-    [ProducesResponseType<RapHistoryPage>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [EndpointDescription("RAP UTC series. from inclusive, to exclusive; at most 366 days. limit: 1-500 (default 100). Preserve the exact nextAfter timestamp and date range.")]
+    [ProducesResponseType<RapHistoryPage>(200)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json", "application/json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<IActionResult> Rap(Guid id, CancellationToken cancellationToken,
         [FromQuery] DateOnly? from = null, [FromQuery] DateOnly? to = null,
         [FromQuery] DateTimeOffset? after = null, [FromQuery] int limit = 100)

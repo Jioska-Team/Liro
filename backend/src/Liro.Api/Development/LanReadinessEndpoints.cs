@@ -1,4 +1,5 @@
 using Liro.Api.Security;
+using Microsoft.AspNetCore.Mvc;
 using Liro.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -18,7 +19,12 @@ public static class LanReadinessEndpoints
                 var result = await CheckAsync(context, access, token => database.Database.CanConnectAsync(token),
                     async token => { await cache.GetDatabase().PingAsync().WaitAsync(token); });
                 return result;
-            });
+            })
+            .WithDescription("Development LAN dependency probe. Available only on the configured LAN listener.")
+            .Produces<LanReadinessResponse>(StatusCodes.Status200OK)
+            .Produces<LanReadinessResponse>(StatusCodes.Status503ServiceUnavailable)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json");
         }
     }
 

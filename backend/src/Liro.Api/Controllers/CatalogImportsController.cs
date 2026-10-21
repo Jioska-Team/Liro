@@ -8,6 +8,9 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Liro.Api.Controllers;
 
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
 [ApiController]
 [Route("api/v1/catalog/imports")]
 [Authorize(Policy = "CatalogAdmin")]
@@ -16,11 +19,14 @@ public sealed class CatalogImportsController(ImportRobloxItemService importer) :
 {
     /// <summary>Imports or refreshes one Roblox asset or bundle using its external identifier.</summary>
     [HttpPost]
-    [ProducesResponseType<ItemResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [EndpointDescription("Import or refresh an Asset or Bundle by positive Roblox ID. Administrative HTTPS only.")]
+    [ProducesResponseType<ItemResponse>(200)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json", "application/json")]
+    [ProducesResponseType(typeof(void), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(409, "application/problem+json", "application/json")]
+    [ProducesResponseType<ProblemDetails>(415, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(502)]
     public async Task<IActionResult> Import([FromBody] ImportCatalogItemRequest request, CancellationToken cancellationToken)
     {
         // ApiController validates the body before invoking the importer.

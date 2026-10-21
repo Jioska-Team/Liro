@@ -33,6 +33,14 @@ if (args.Length == 1 && args[0] == "--market-efficiency-only")
     MarketConcurrencyTests.RegisterLanes(targeted);
     return await targeted.RunAsync();
 }
+if (args.Length == 1 && args[0] == "--http-contracts-only")
+{
+    var targeted = new RegressionSuite();
+    HttpContractTests.Register(targeted);
+    HttpOperationalContractTests.Register(targeted);
+    ApiTests.Register(targeted);
+    return await targeted.RunAsync();
+}
 // Never report a green run after silently omitting database-dependent cases.
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;
@@ -93,6 +101,8 @@ MarketHistoryTests.Register(suite);
 RobloxTests.Register(suite);
 PersistenceTests.Register(suite);
 WorkerTests.Register(suite);
+HttpContractTests.Register(suite);
+HttpOperationalContractTests.Register(suite);
 ApiTests.Register(suite);
 LanAccessTests.Register(suite);
 LanReadinessTests.Register(suite);

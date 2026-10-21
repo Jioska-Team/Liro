@@ -10,7 +10,7 @@ public static class ApiServiceExtensions
     public static IServiceCollection AddLiroApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
-        services.AddOpenApi();
+        services.AddOpenApi(ApiOpenApi.Configure);
         services.AddScoped<ItemService>();
         services.AddScoped<ImportRobloxItemService>();
         services.AddProblemDetails();

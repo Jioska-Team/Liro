@@ -1,6 +1,73 @@
-@Liro.Api_HostAddress = http://localhost:5205
+@baseUrl = https://localhost:7174
+@itemId = 00000000-0000-0000-0000-000000000000
+@assetId = 1
+@bundleId = 1
+# Set locally; never commit a real administrative key.
+@adminKey =
 
-GET {{Liro.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Generated contract (Development only)
+GET {{baseUrl}}/openapi/v1.json
 
-###
+### Offset catalog
+GET {{baseUrl}}/api/v1/catalog?page=1&pageSize=24
+
+### Cursor catalog; pass nextCursor unchanged as after on subsequent requests
+GET {{baseUrl}}/api/v1/catalog/feed?pageSize=24
+
+### Stored bundle relationships
+GET {{baseUrl}}/api/v1/catalog/bundles/{{bundleId}}/components
+
+### Parent bundles (array, possibly empty)
+GET {{baseUrl}}/api/v1/catalog/assets/{{assetId}}/bundles
+
+### Item by internal ID (unknown stored item returns 404)
+GET {{baseUrl}}/api/v1/items/{{itemId}}
+
+### Stored asset
+GET {{baseUrl}}/api/v1/items/by-asset/{{assetId}}
+
+### Stored bundle
+GET {{baseUrl}}/api/v1/items/by-bundle/{{bundleId}}
+
+### Legacy history (array, exclusive before timestamp)
+GET {{baseUrl}}/api/v1/items/{{itemId}}/market-history?limit=100
+
+### Daily sales, UTC date range, exclusive to
+GET {{baseUrl}}/api/v1/items/{{itemId}}/market-history/daily-sales?from=2026-10-01&to=2026-10-20&limit=100
+
+### RAP series
+GET {{baseUrl}}/api/v1/items/{{itemId}}/market-history/rap?from=2026-10-01&to=2026-10-20&limit=100
+
+### Market summary
+GET {{baseUrl}}/api/v1/items/{{itemId}}/market-summary
+
+### Development diagnostics
+GET {{baseUrl}}/api/infrastructure
+
+### Invalid query: 400 ProblemDetails
+GET {{baseUrl}}/api/v1/catalog?page=0
+
+### Administrative import (requires HTTPS and locally supplied key)
+POST {{baseUrl}}/api/v1/catalog/imports
+X-Liro-Admin-Key: {{adminKey}}
+Content-Type: application/json
+
+{"itemType":"Asset","robloxId":{{assetId}}}
+
+### Compatibility asset import
+POST {{baseUrl}}/api/v1/items/import/{{assetId}}
+X-Liro-Admin-Key: {{adminKey}}
+
+### Compatibility bundle import
+POST {{baseUrl}}/api/v1/items/import-bundle/{{bundleId}}
+X-Liro-Admin-Key: {{adminKey}}
+
+### Create stored item: 201 + Location or 409 if it exists
+POST {{baseUrl}}/api/v1/items
+X-Liro-Admin-Key: {{adminKey}}
+Content-Type: application/json
+
+{"robloxAssetId":{{assetId}},"name":"Example item","collectibleItemId":null,"marketStatus":1}
+
+### LAN probe: only when enabled, use configured private LAN address on port 5205
+# GET http://<configured-lan-address>:5205/api/lan/ready
