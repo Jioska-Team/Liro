@@ -25,6 +25,14 @@ if (args.Length == 1 && args[0] == "--catalog-refactor-only")
     BatchTests.Register(targeted);
     return await targeted.RunAsync();
 }
+if (args.Length == 1 && args[0] == "--market-efficiency-only")
+{
+    var targeted = new RegressionSuite();
+    MarketReclassificationTests.Register(targeted);
+    MarketHttpClientTests.Register(targeted);
+    MarketConcurrencyTests.RegisterLanes(targeted);
+    return await targeted.RunAsync();
+}
 // Never report a green run after silently omitting database-dependent cases.
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;
@@ -60,6 +68,8 @@ MarketLifecycleTests.Register(suite);
 if (args.Contains("--market-lifecycle-only")) return await suite.RunAsync();
 MarketProxyFailureTests.Register(suite);
 MarketTrackingTests.Register(suite);
+MarketReclassificationTests.Register(suite);
+MarketHttpClientTests.Register(suite);
 MarketConcurrencyTests.Register(suite);
 PersistenceOptimizationTests.Register(suite);
 if (args.Contains("--market-tracking-only")) return await suite.RunAsync();

@@ -6,6 +6,8 @@ using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Collections.Concurrent;
 
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Liro.RegressionTests")]
+
 namespace Liro.MarketWorker;
 
 public sealed class MarketHttpException(string code, TimeSpan delay, bool limited = false) : Exception(code)
@@ -16,11 +18,13 @@ public sealed class MarketHttpException(string code, TimeSpan delay, bool limite
 }
 
 public sealed class MarketTransport(IConfiguration configuration, IConnectionMultiplexer redis, IOptions<MarketOptions> settings,
-    ILogger<MarketTransport>? logger = null)
+    ILogger<MarketTransport>? logger = null) : IDisposable
 {
     private readonly ConcurrentDictionary<string, RedisRobloxRequestBudget> budgets = new();
     private readonly ConcurrentDictionary<string, MarketDirectBudget> directBudgets = new();
     private readonly MarketDispatchGate dispatch = new();
+    private readonly MarketHttpClients clients = new(configuration);
+    public void Dispose() { clients.Dispose(); dispatch.Dispose(); }
     private const string CooldownKey = "liro:{market}:cooldown";
 
     public static HttpClient CreateProxyClient(MarketProxy proxy, IConfiguration configuration)
@@ -30,20 +34,14 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         var password = section["Password"];
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
             throw new MarketHttpException("CredencialesNoConfiguradas", TimeSpan.FromMinutes(5));
-        var handler = new HttpClientHandler
-        {
-            UseProxy = true,
-            Proxy = new WebProxy(new Uri(proxy.Address), false) { Credentials = new NetworkCredential(username, password) },
-            AllowAutoRedirect = false,
-            UseCookies = false
-        };
-        return new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 8 * 1024 * 1024 };
+        return MarketHttpClients.CreateClient(MarketHttpClients.CreateHandler(proxy, new NetworkCredential(username, password)));
     }
 
     public async Task<ResaleObservation> ReadAsync(MarketProxy proxy, Guid collectibleId, CancellationToken ct)
     {
         // This method never changes route. The worker selects fallback only after all proxies are unavailable.
-        using var http = CreateProxyClient(proxy, configuration);
+        using var client = clients.AcquireProxy(proxy);
+        var http = client.Client;
         var normalized = MarketProxy.RouteKey(proxy.Address);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized)));
         var route = Budget("liro:{market}:route:" + hash, proxy.RequestsPerMinute, TimeSpan.FromSeconds(3));
@@ -172,11 +170,8 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
                 throw new MarketHttpException("CupoMercado", wait, true);
             marketAcquired = true;
             // Never let proxy settings or environment variables redirect the direct fallback.
-            using var http = new HttpClient(new HttpClientHandler { UseProxy = false, UseCookies = false, AllowAutoRedirect = false })
-            {
-                Timeout = TimeSpan.FromSeconds(30),
-                MaxResponseContentBufferSize = 8 * 1024 * 1024
-            };
+            using var client = clients.AcquireDirect();
+            var http = client.Client;
             ct.ThrowIfCancellationRequested();
             using var admission = await RobloxRequestAdmission.CreateAsync(ct, (direct, id), (global, id));
             logger?.LogInformation("Solicitud de mercado: ruta DIRECTA_RESPALDO; artículo {Item}; presupuesto {Budget} por minuto.", collectibleId, settings.Value.DirectRequestsPerMinute);
@@ -244,3 +239,118 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
     }
 }
 
+
+// Retired clients stay alive until their last request finishes. Cache keys never contain secrets.
+internal sealed class MarketHttpClients(IConfiguration configuration,
+    Func<MarketProxy?, NetworkCredential?, HttpMessageHandler>? handlerFactory = null) : IDisposable
+{
+    private const int Capacity = 32;
+    private readonly object sync = new();
+    private readonly Dictionary<(string Route, string Reference), Entry> proxies = new();
+    private Entry? direct;
+    private bool disposed;
+
+    public Lease AcquireDirect()
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            return Borrow(direct ??= Create(null, null));
+        }
+    }
+
+    public Lease AcquireProxy(MarketProxy proxy)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            var section = configuration.GetSection("MarketProxySecrets:" + proxy.SecretReference);
+            var username = section["Username"];
+            var password = section["Password"];
+            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password))
+                throw new MarketHttpException("CredencialesNoConfiguradas", TimeSpan.FromMinutes(5));
+            var key = (MarketProxy.RouteKey(proxy.Address), proxy.SecretReference);
+            if (proxies.TryGetValue(key, out var previous))
+            {
+                if (previous.Credentials!.UserName == username && previous.Credentials.Password == password)
+                    return Borrow(previous);
+                proxies.Remove(key);
+                Retire(previous);
+            }
+            if (proxies.Count == Capacity)
+            {
+                var oldest = proxies.First();
+                proxies.Remove(oldest.Key);
+                Retire(oldest.Value);
+            }
+            var entry = Create(proxy, new NetworkCredential(username, password));
+            proxies.Add(key, entry);
+            return Borrow(entry);
+        }
+    }
+
+    private Entry Create(MarketProxy? proxy, NetworkCredential? credentials) =>
+        new(CreateClient((handlerFactory ?? CreateHandler)(proxy, credentials)), credentials);
+
+    internal static HttpClient CreateClient(HttpMessageHandler handler) => new(handler)
+    {
+        Timeout = TimeSpan.FromSeconds(30), MaxResponseContentBufferSize = 8 * 1024 * 1024
+    };
+
+    internal static HttpMessageHandler CreateHandler(MarketProxy? proxy, NetworkCredential? credentials) => new SocketsHttpHandler
+    {
+        UseProxy = proxy is not null,
+        Proxy = proxy is null ? null : new WebProxy(new Uri(proxy.Address), false) { Credentials = credentials },
+        UseCookies = false,
+        AllowAutoRedirect = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(2)
+    };
+
+    private Lease Borrow(Entry entry)
+    {
+        entry.Users++;
+        return new(entry.Client, () =>
+        {
+            lock (sync)
+            {
+                if (--entry.Users == 0 && entry.Retired)
+                    entry.Client.Dispose();
+            }
+        });
+    }
+
+    private static void Retire(Entry entry)
+    {
+        entry.Retired = true;
+        if (entry.Users == 0)
+            entry.Client.Dispose();
+    }
+
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (disposed) return;
+            disposed = true;
+            if (direct is not null) Retire(direct);
+            foreach (var entry in proxies.Values) Retire(entry);
+            proxies.Clear();
+            direct = null;
+        }
+    }
+
+    private sealed class Entry(HttpClient client, NetworkCredential? credentials)
+    {
+        public readonly HttpClient Client = client;
+        public readonly NetworkCredential? Credentials = credentials;
+        public int Users;
+        public bool Retired;
+    }
+
+    internal sealed class Lease(HttpClient client, Action release) : IDisposable
+    {
+        private Action? releaseOnce = release;
+        public HttpClient Client { get; } = client;
+        public void Dispose() => Interlocked.Exchange(ref releaseOnce, null)?.Invoke();
+    }
+}

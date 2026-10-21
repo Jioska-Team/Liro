@@ -40,6 +40,9 @@ public sealed class MarketStore(LiroDbContext db)
         """).ToListAsync(ct);
 
     public Task<List<MarketActivityEvidence>> ActivityEvidenceAsync(DateTime asOf, Guid? itemId, CancellationToken ct)
+        => ActivityEvidenceQuery(asOf, itemId).ToListAsync(ct);
+
+    private IQueryable<MarketActivityEvidence> ActivityEvidenceQuery(DateTime asOf, Guid? itemId)
         => db.Database.SqlQuery<MarketActivityEvidence>($"""
             SELECT w."ItemId", w."LastSuccessAtUtc", r."CompletedDays", r."WeeklySales", r."HasRecent",
                 EXISTS(SELECT 1 FROM "MarketHistoryPoints" h WHERE h."ItemId"=w."ItemId"
@@ -54,28 +57,43 @@ public sealed class MarketStore(LiroDbContext db)
             ) r
             WHERE ({itemId}::uuid IS NULL OR w."ItemId"={itemId}) AND i."CreatorId"=1 AND i."CreatorType"='User'
                 AND i."MarketStatus" IN ('Limited','LimitedUnique') AND i."CollectibleItemId" IS NOT NULL
-            """).ToListAsync(ct);
+            """);
 
-    public async Task<int> ReclassifyAsync(DateTime asOf, CancellationToken ct)
+    public async Task<int> ReclassifyAsync(DateTime asOf, CancellationToken ct, SemaphoreSlim? writes = null)
     {
-        var evidence = await ActivityEvidenceAsync(asOf, null, ct);
         var changed = 0;
-        foreach (var batch in evidence.Chunk(120))
+        Guid? after = null;
+        while (true)
         {
+            var query = ActivityEvidenceQuery(asOf, null);
+            if (after is { } cursor)
+                query = query.Where(x => x.ItemId.CompareTo(cursor) > 0);
+            var batch = await query.OrderBy(x => x.ItemId).Take(120).ToListAsync(ct);
+            if (batch.Count == 0)
+                return changed;
             var ids = batch.Select(x => x.ItemId).ToArray();
             var last = batch.Select(x => x.LastSuccessAtUtc).ToArray();
             var activities = batch.Select(x => x.Activity).ToArray();
             var daily = batch.Select(x => x.ExactDailySales).ToArray();
-            changed += await db.Database.ExecuteSqlInterpolatedAsync($"""
+            // Read and pace outside the gate; only this bounded update competes with saves/claims.
+            if (writes is not null)
+                await writes.WaitAsync(ct);
+            try
+            {
+                changed += await db.Database.ExecuteSqlInterpolatedAsync($"""
                 UPDATE "MarketWatches" w SET "Activity"=e.activity, "DailySales"=round(e.daily,6)
                 FROM unnest({ids}::uuid[],{last}::timestamptz[],{activities}::text[],{daily}::numeric[]) e(id,last,activity,daily)
                 WHERE w."ItemId"=e.id AND w."LastSuccessAtUtc" IS NOT DISTINCT FROM e.last
                     AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc"<=NOW())
                     AND (w."Activity" IS DISTINCT FROM e.activity OR w."DailySales" IS DISTINCT FROM round(e.daily,6))
                 """, ct);
+            }
+            finally { writes?.Release(); }
+            after = batch[^1].ItemId;
             await Task.Delay(25, ct);
+            if (batch.Count < 120)
+                return changed;
         }
-        return changed;
     }
 
     public async Task<MarketClaim?> ClaimAsync(CancellationToken ct, bool preferBackground = false, MarketOptions? schedule = null)

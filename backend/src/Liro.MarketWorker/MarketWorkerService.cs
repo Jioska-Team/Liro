@@ -46,13 +46,8 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                     var store = new MarketStore(db);
                     if (DateTime.UtcNow >= nextClassification)
                     {
-                        await writes.WaitAsync(ct);
-                        try
-                        {
-                            logger.LogInformation("Clasificación desde historial guardado: {Count} artículos actualizados.",
-                            await store.ReclassifyAsync(DateTime.UtcNow, ct));
-                        }
-                        finally { writes.Release(); }
+                        logger.LogInformation("Clasificación desde historial guardado: {Count} artículos actualizados.",
+                            await store.ReclassifyAsync(DateTime.UtcNow, ct, writes));
                         nextClassification = DateTime.UtcNow.AddMinutes(5);
                         nextConnections = DateTime.MinValue;
                     }
