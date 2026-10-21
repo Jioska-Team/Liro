@@ -15,7 +15,7 @@
 </section>
 <nav aria-label="Páginas del catálogo"><button (click)="loadPage(page() - 1)" [disabled]="page() === 1 || catalogLoading()">Anterior</button><span>Página {{ page() }}</span><button (click)="loadPage(page() + 1)" [disabled]="!hasMore() || catalogLoading()">Siguiente</button></nav>
 @if (selectedBundle(); as bundle) {
- <section class="components" aria-label="Componentes del paquete"><h2>Componentes de {{ bundle.name }}</h2><button (click)="selectedBundle.set(null)">Cerrar</button>
+ <section class="components" aria-label="Componentes del paquete"><h2>Componentes de {{ bundle.name }}</h2><button (click)="closeComponents()">Cerrar</button>
  @if (componentsError()) { <p role="alert">{{ componentsError() }}</p> }
  @else if (contents(); as detail) {
  <ul>@for (component of detail.components; track component.id) { <li>{{ component.name }}</li> }</ul>

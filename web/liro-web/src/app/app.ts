@@ -1,9 +1,11 @@
 import { afterNextRender, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
 import { CatalogItem, BundleContents, CatalogService } from './core/api/catalog';
 @Component({ selector: 'app-root', imports: [], templateUrl: './app.html', styleUrl: './app.css' })
 export class App {
  private readonly catalog = inject(CatalogService);
+ private componentsRequest?: Subscription;
  private readonly destroyRef = inject(DestroyRef);
  protected readonly items = signal<CatalogItem[]>([]);
  protected readonly catalogLoading = signal(false);
@@ -19,7 +21,7 @@ export class App {
  }
  protected loadPage(page: number) {
   if (page < 1 || this.catalogLoading()) return;
-  this.catalogLoading.set(true); this.catalogError.set(''); this.selectedBundle.set(null);
+  this.catalogLoading.set(true); this.catalogError.set(''); this.closeComponents();
   this.catalog.getPage(page).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
    next: result => {
     this.connected.set(true);
@@ -30,9 +32,19 @@ export class App {
    error: () => { this.connected.set(false); this.catalogError.set('No se pudo cargar el catálogo. Inténtalo de nuevo.'); this.catalogLoading.set(false); }
   });
  }
+ protected closeComponents() {
+  this.componentsRequest?.unsubscribe();
+  this.componentsRequest = undefined;
+  this.selectedBundle.set(null);
+  this.contents.set(null);
+  this.componentsError.set('');
+ }
  protected showComponents(item: CatalogItem) {
+  if (this.selectedBundle()?.id === item.id &&
+      (this.contents() !== null || (this.componentsRequest && !this.componentsRequest.closed))) return;
+  this.componentsRequest?.unsubscribe();
   this.selectedBundle.set(item); this.contents.set(null); this.componentsError.set('');
-  this.catalog.getComponents(item.robloxItemId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+  this.componentsRequest = this.catalog.getComponents(item.robloxItemId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
    next: result => { if (this.selectedBundle()?.id === item.id) this.contents.set(result); },
    error: () => { if (this.selectedBundle()?.id === item.id) this.componentsError.set('No se pudieron consultar los componentes.'); }
   });
