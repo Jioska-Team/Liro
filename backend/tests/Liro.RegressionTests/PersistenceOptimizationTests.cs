@@ -135,6 +135,7 @@ internal static class PersistenceOptimizationTests
     }
     private sealed class SummaryStub : IItemMarketSummaryRepository
     {
+        public Task<IReadOnlyDictionary<Guid, decimal?>> GetRapAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<Guid, decimal?>>(new Dictionary<Guid, decimal?>());
         public ItemMarketSummary? Result; public int Calls;
         public Task<ItemMarketSummary?> GetAsync(Guid id, CancellationToken ct)
         {

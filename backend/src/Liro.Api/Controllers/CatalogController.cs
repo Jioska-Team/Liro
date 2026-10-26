@@ -9,7 +9,7 @@ namespace Liro.Api.Controllers;
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
 [ApiController]
 [Route("api/v1/catalog")]
-public sealed class CatalogController(ICatalogBrowseRepository repository) : ControllerBase
+public sealed class CatalogController(ICatalogBrowseRepository repository, ItemResponseMapper mapper) : ControllerBase
 {
     [HttpGet]
     [EndpointDescription("Stored visible official catalog. page: 1-10000; pageSize: 1-100 (default 24). " + CatalogQuery.Description)]
@@ -25,7 +25,7 @@ public sealed class CatalogController(ICatalogBrowseRepository repository) : Con
         var result = options.IsDefault
             ? await repository.BrowseAsync(page, pageSize, cancellationToken)
             : await repository.BrowseAsync(page, pageSize, options, cancellationToken);
-        return Ok(new CatalogPageResponse(result.Items.Select(ItemResponse.From).ToArray(), page, pageSize, result.HasMore));
+        return Ok(new CatalogPageResponse(await mapper.MapAsync(result.Items, cancellationToken), page, pageSize, result.HasMore));
     }
 
     [HttpGet("feed")]
@@ -49,7 +49,7 @@ public sealed class CatalogController(ICatalogBrowseRepository repository) : Con
                 ? new CatalogCursor(result.Items[^1].RobloxCreatedAtUtc, result.Items[^1].Id)
                 : result.NextCursor ?? throw new InvalidOperationException("A filtered catalog page must include its continuation position."), options)
             : null;
-        return Ok(new CatalogFeedResponse(result.Items.Select(ItemResponse.From).ToArray(), pageSize, result.HasMore, next));
+        return Ok(new CatalogFeedResponse(await mapper.MapAsync(result.Items, cancellationToken), pageSize, result.HasMore, next));
     }
 
     [HttpGet("bundles/{bundleId:long}/components")]
@@ -62,8 +62,10 @@ public sealed class CatalogController(ICatalogBrowseRepository repository) : Con
         if (bundleId <= 0)
             return BadRequest();
         var result = await repository.GetBundleContentsAsync(bundleId, cancellationToken);
-        return result is null ? NotFound() : Ok(new BundleComponentsResponse(ItemResponse.From(result.Bundle),
-            result.Components.Select(ItemResponse.From).ToArray(), result.PendingAssetIds,
+        if (result is null)
+            return NotFound();
+        var items = await mapper.MapAsync(new[] { result.Bundle }.Concat(result.Components).ToArray(), cancellationToken);
+        return Ok(new BundleComponentsResponse(items[0], items.Skip(1).ToArray(), result.PendingAssetIds,
             result.Bundle.BundleComponentsObservedAtUtc));
     }
 
@@ -76,6 +78,6 @@ public sealed class CatalogController(ICatalogBrowseRepository repository) : Con
         if (assetId <= 0)
             return BadRequest();
         var bundles = await repository.GetParentBundlesAsync(assetId, cancellationToken);
-        return Ok(bundles.Select(ItemResponse.From).ToArray());
+        return Ok(await mapper.MapAsync(bundles, cancellationToken));
     }
 }

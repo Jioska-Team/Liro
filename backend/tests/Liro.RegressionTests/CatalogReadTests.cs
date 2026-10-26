@@ -160,6 +160,7 @@ internal static class CatalogReadTests
                 builder.Services.AddLiroApi(new ConfigurationBuilder().Build());
                 builder.Services.AddControllers().AddApplicationPart(typeof(Liro.Api.Controllers.CatalogController).Assembly);
                 builder.Services.AddSingleton<ICatalogBrowseRepository>(repository);
+                builder.Services.AddSingleton<IItemMarketSummaryRepository>(new ItemMarketSummaryRepository(db));
                 await using var app = builder.Build();
                 app.UseRouting();
                 app.UseRateLimiter();

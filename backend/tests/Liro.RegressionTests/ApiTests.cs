@@ -29,7 +29,7 @@ internal static class ApiTests
         suite.AsyncTest("API response does not expose domain event state", async () =>
         {
             var repo = new MemoryRepository(Fixtures.Item());
-            var controller = new Liro.Api.Controllers.ItemsController(new ItemService(repo), Fixtures.Importer(repo));
+            var controller = new Liro.Api.Controllers.ItemsController(new ItemService(repo), Fixtures.Importer(repo), new Liro.Api.Contracts.ItemResponseMapper(new ItemPriceTests.RapStore()));
             var result = (Microsoft.AspNetCore.Mvc.OkObjectResult)await controller.GetByAssetId(1, CancellationToken.None);
             Check.That(!JsonSerializer.Serialize(result.Value).Contains("DomainEvents"), "API leaks internal domain state");
         });

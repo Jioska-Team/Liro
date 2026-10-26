@@ -36,6 +36,7 @@ if (args.Length == 1 && args[0] == "--market-efficiency-only")
 if (args.Length == 1 && args[0] == "--http-contracts-only")
 {
     var targeted = new RegressionSuite();
+    ItemPriceTests.Register(targeted);
     HttpContractTests.Register(targeted);
     HttpOperationalContractTests.Register(targeted);
     ApiTests.Register(targeted);
@@ -63,6 +64,7 @@ if (args.Length == 1 && args[0] == "--catalog-queries-only")
 }
 
 var suite = new RegressionSuite();
+ItemPriceTests.Register(suite);
 ValkeyLossTests.Register(suite);
 if (args.Contains("--valkey-loss-only")) return await suite.RunAsync();
 IntegrationRegistrationTests.Register(suite);

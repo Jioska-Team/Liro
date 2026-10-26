@@ -2,6 +2,8 @@ namespace Liro.Application.Catalog.Repositories;
 
 public interface IItemMarketSummaryRepository
 {
+    Task<IReadOnlyDictionary<Guid, decimal?>> GetRapAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken cancellationToken);
+
     Task<ItemMarketSummary?> GetAsync(Guid itemId, CancellationToken cancellationToken);
 }
 

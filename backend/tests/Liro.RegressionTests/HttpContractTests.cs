@@ -228,6 +228,9 @@ internal static class HttpContractTests
             && value.GetProperty("marketStatus").ValueKind == JsonValueKind.Number
             && value.GetProperty("marketStatus").GetInt32() == (int)ItemMarketStatus.Normal
             && value.GetProperty("market").ValueKind == JsonValueKind.Null
+            && value.GetProperty("originalPriceRobux").ValueKind == JsonValueKind.Null
+            && value.GetProperty("currentPriceRobux").ValueKind == JsonValueKind.Null
+            && value.GetProperty("rapRobux").ValueKind == JsonValueKind.Null
             && value.GetProperty("thumbnailUrl").ValueKind == JsonValueKind.Null
             && !value.TryGetProperty("domainEvents", out _), "Item identity, numeric enum, nulls or internal state changed");
     }
@@ -293,6 +296,7 @@ internal static class HttpContractTests
 
     private sealed class MarketRepository(Guid id) : IItemMarketHistoryRepository, IItemMarketSeriesRepository, IItemMarketSummaryRepository
     {
+        public Task<IReadOnlyDictionary<Guid, decimal?>> GetRapAsync(IReadOnlyCollection<Guid> itemIds, CancellationToken ct) => Task.FromResult<IReadOnlyDictionary<Guid, decimal?>>(new Dictionary<Guid, decimal?>());
         private static readonly DateTime Observed = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
         public Task<IReadOnlyList<ItemMarketSnapshot>> GetBeforeAsync(Guid itemId, DateTime beforeUtc, int limit, CancellationToken ct) => Task.FromResult<IReadOnlyList<ItemMarketSnapshot>>([]);
         public Task<DailySalesPage> GetDailyAsync(Guid itemId, DateOnly from, DateOnly to, DateOnly? after, int limit, CancellationToken ct) => Task.FromResult(new DailySalesPage(from, to, [new(from, null, 0, Observed)], from));

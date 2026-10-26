@@ -15,7 +15,7 @@ namespace Liro.Api.Controllers;
 [Route("api/v1/catalog/imports")]
 [Authorize(Policy = "CatalogAdmin")]
 [EnableRateLimiting("catalog-writes")]
-public sealed class CatalogImportsController(ImportRobloxItemService importer) : ControllerBase
+public sealed class CatalogImportsController(ImportRobloxItemService importer, ItemResponseMapper mapper) : ControllerBase
 {
     /// <summary>Imports or refreshes one Roblox asset or bundle using its external identifier.</summary>
     [HttpPost]
@@ -32,6 +32,6 @@ public sealed class CatalogImportsController(ImportRobloxItemService importer) :
         // ApiController validates the body before invoking the importer.
         var type = request.ItemType == "Bundle" ? CatalogItemType.Bundle : CatalogItemType.Asset;
         var item = await importer.ImportAsync(new CatalogItemKey(request.RobloxId, type), cancellationToken);
-        return item is null ? NotFound() : Ok(ItemResponse.From(item));
+        return item is null ? NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
     }
 }

@@ -67,7 +67,13 @@ public sealed record ItemResponse(
         get; init;
     }
 
-    public static ItemResponse From(Item item)
+    public long? OriginalPriceRobux { get; init; }
+    public long? CurrentPriceRobux { get; init; }
+    public decimal? RapRobux { get; init; }
+
+    public static ItemResponse From(Item item) => From(item, null);
+
+    public static ItemResponse From(Item item, decimal? rap)
     {
         var response = new ItemResponse(
         item.Id,
@@ -95,6 +101,13 @@ public sealed record ItemResponse(
             Restrictions = item.Restrictions.ToArray(),
             RobloxCreatedAtUtc = item.RobloxCreatedAtUtc,
             RobloxUpdatedAtUtc = item.RobloxUpdatedAtUtc,
+            // A live non-Limited listing supplies its base price even without a discount.
+            // Limited listing prices are not evidence of their historical original price.
+            OriginalPriceRobux = item.MarketState?.Data.PriceBeforeDiscountRobux
+                ?? (item.MarketStatus is not (ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique)
+                    && item.MarketState?.Data.IsOffSale == false ? item.MarketState.Data.PrimaryPriceRobux : null),
+            CurrentPriceRobux = item.MarketState?.Data.GetAvailablePrice(),
+            RapRobux = item.MarketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique ? rap : null,
             Market = item.MarketState is { } state ? ItemMarketResponse.From(state.Data, state.ObservedAtUtc, state.Source) : null
         };
         return response;

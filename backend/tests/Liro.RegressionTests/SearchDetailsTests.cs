@@ -19,6 +19,42 @@ internal static class SearchDetailsTests
 {
     public static void Register(RegressionSuite suite)
     {
+        foreach (var sample in new (string Name, string Fields, string Restrictions, bool? OffSale, long? Current, long? Original)[]
+        {
+            ("Emberwrath public listing", "\"price\":50000,\"lowestPrice\":50000,\"lowestResalePrice\":0,\"hasResellers\":false", "[]", false, 50000, null),
+            ("Provider discount", "\"price\":40000,\"discountInformation\":{\"originalPrice\":50000}", "[]", false, 40000, 50000),
+            ("Off sale placeholder", "\"price\":1,\"priceStatus\":\"Off Sale\"", "[]", true, null, null),
+            ("OffSale status", "\"price\":100,\"priceStatus\":\"OffSale\"", "[]", true, null, null),
+            ("No resellers", "\"price\":100,\"priceStatus\":\"NoResellers\",\"hasResellers\":false", "[\"Limited\"]", true, null, null),
+            ("Explicit off sale", "\"price\":50000,\"isOffSale\":true", "[]", true, null, null),
+            ("Explicit on sale", "\"price\":50000,\"isOffSale\":false,\"priceStatus\":\"Off Sale\"", "[]", false, 50000, null),
+            ("Free listing", "\"price\":0,\"priceStatus\":\"Free\"", "[]", false, 0, null),
+            ("Missing availability and price", "\"lowestResalePrice\":0,\"hasResellers\":false", "[]", null, null, null),
+            ("Unrecognized price status", "\"price\":100,\"priceStatus\":\"Unavailable\"", "[]", null, null, null),
+            ("Limited historical listing", "\"price\":100,\"lowestResalePrice\":500,\"hasResellers\":true", "[\"Limited\"]", null, 500, null)
+        })
+        {
+            suite.AsyncTest("Catalog pricing preserves provider availability: " + sample.Name, async () =>
+            {
+                var entry = System.Text.Json.Nodes.JsonNode.Parse($"{{\"id\":117367851700030,\"itemType\":\"Asset\",\"name\":\"Emberwrath\",\"creatorTargetId\":1,\"creatorType\":\"User\",\"itemRestrictions\":{sample.Restrictions},{sample.Fields}}}")!;
+                entry["assetType"] = 8;
+                entry["itemCreatedUtc"] = "2026-10-21T21:42:41.727Z";
+                var calls = 0;
+                using var http = Http([entry], () => calls++);
+                var key = new CatalogItemKey(117367851700030);
+                var page = await Client(http).GetPageAsync(CatalogSearchScope.All, false, null, default);
+                var details = await new RobloxCatalogClient(http).GetItemAsync(key);
+                var batch = await new RobloxCatalogClient(http).GetItemsAsync([key]);
+                foreach (var item in new[] { page.Details[key].Item, details, batch[key].Item })
+                {
+                    Check.That(item?.Market is not null, "Valid provider item was discarded");
+                    Check.That(item!.Market!.IsOffSale == sample.OffSale, "Availability was lost or invented");
+                    Check.That(item.Market.GetAvailablePrice() == sample.Current, "Available price did not respect provider availability");
+                    Check.That(item.Market.PriceBeforeDiscountRobux == sample.Original, "Provider discount was lost or invented");
+                }
+                Check.That(calls == 3, "Mapping added redundant provider requests");
+            });
+        }
         suite.AsyncTest("Bundle discovery keeps only valid assets from official bundles", async () =>
         {
             var bundle = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(Entry(10, "Bundle")))!;

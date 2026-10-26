@@ -278,17 +278,19 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
             }
 
             var hasResellers = ReadBoolean(item, "hasResellers");
+            var price = ReadNumber(item, "price");
+            var priceStatus = ReadString(item, "priceStatus");
             var market = new ItemMarketData
             {
-                PrimaryPriceRobux = ReadNumber(item, "price"),
+                PrimaryPriceRobux = price,
                 LowestPriceRobux = ReadNumber(item, "lowestPrice"),
                 LowestResalePriceRobux = ReadNumber(item, "lowestResalePrice"),
                 PriceBeforeDiscountRobux = item.TryGetProperty("discountInformation", out var discount) && discount.ValueKind == JsonValueKind.Object
                     ? ReadNumber(discount, "originalPrice") : null,
-                IsOffSale = ReadBoolean(item, "isOffSale"),
+                IsOffSale = ReadBoolean(item, "isOffSale") ?? InferOffSale(price, priceStatus, isLimited, hasResellers),
                 HasResellers = hasResellers,
                 IsResellable = isLimited || hasResellers.HasValue ? true : null,
-                PriceStatus = ReadString(item, "priceStatus"),
+                PriceStatus = priceStatus,
                 TotalQuantity = ReadNumber(item, "totalQuantity"),
                 UnitsAvailableForConsumption = ReadNumber(item, "unitsAvailableForConsumption"),
                 // Roblox can return a negative favorite counter; it is unavailable, not a negative count.
@@ -322,6 +324,20 @@ public sealed class RobloxCatalogClient(HttpClient httpClient, RobloxCatalogSess
         {
             throw new JsonException("Invalid catalog field value.", exception);
         }
+    }
+    private static bool? InferOffSale(long? price, string? priceStatus, bool isLimited, bool? hasResellers)
+    {
+        // Catalog responses can omit isOffSale. Roblox documents priceStatus for
+        // unavailable listings, while ordinary on-sale listings carry just price.
+        var status = priceStatus?.Replace(" ", "", StringComparison.Ordinal).ToUpperInvariant();
+        return status switch
+        {
+            "OFFSALE" or "NORESELLERS" => true,
+            "FREE" => false,
+            // A Limited's listing price can be historical; do not use it as resale.
+            null or "" when price is >= 0 && !isLimited && hasResellers != true => false,
+            _ => null
+        };
     }
     private static IReadOnlyList<long>? ReadBundleComponents(JsonElement item, CatalogItemKey key)
     {

@@ -82,6 +82,7 @@ internal static class HttpOperationalContractTests
             builder.Logging.ClearProviders();
             builder.WebHost.UseUrls("http://127.0.0.1:0");
             builder.Services.AddLiroApi(builder.Configuration);
+            builder.Services.AddSingleton<Liro.Application.Catalog.Repositories.IItemMarketSummaryRepository>(new ItemPriceTests.RapStore());
             builder.Services.RemoveAll<ItemService>();
             builder.Services.RemoveAll<ImportRobloxItemService>();
             builder.Services.AddControllers().AddApplicationPart(typeof(InfrastructureController).Assembly);

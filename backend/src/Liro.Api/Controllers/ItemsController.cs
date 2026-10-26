@@ -13,7 +13,7 @@ namespace Liro.Api.Controllers;
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
 [ApiController]
 [Route("api/v1/items")]
-public sealed class ItemsController(ItemService itemService, ImportRobloxItemService importer) : ControllerBase
+public sealed class ItemsController(ItemService itemService, ImportRobloxItemService importer, ItemResponseMapper mapper) : ControllerBase
 {
     [HttpGet("{id:guid}")]
     [EndpointDescription("Get a stored item by internal ID. This read does not import from Roblox.")]
@@ -23,7 +23,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
     public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
     {
         var item = await itemService.GetByIdAsync(id, cancellationToken);
-        return item is null ? NotFound() : Ok(ItemResponse.From(item));
+        return item is null ? NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
     }
 
     [HttpGet("by-asset/{assetId:long}")]
@@ -39,7 +39,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         }
 
         var item = await itemService.GetByAssetIdAsync(assetId, cancellationToken);
-        return item is null ? NotFound() : Ok(ItemResponse.From(item));
+        return item is null ? NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
     }
 
     [HttpGet("by-bundle/{bundleId:long}")]
@@ -54,7 +54,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
             return BadRequest(new ProblemDetails { Status = 400, Title = "Bundle ID must be positive." });
         }
         var item = await itemService.GetByBundleIdAsync(bundleId, cancellationToken);
-        var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
+        var response = item is null ? (IActionResult)NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
         return response;
     }
     // Compatibility route. New clients use POST /api/v1/catalog/imports.
@@ -75,7 +75,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
             return BadRequest(new ProblemDetails { Status = 400, Title = "Bundle ID must be positive." });
         }
         var item = await importer.ImportAsync(new Liro.Domain.Catalog.Models.CatalogItemKey(bundleId, CatalogItemType.Bundle), cancellationToken);
-        var response = item is null ? (IActionResult)NotFound() : Ok(ItemResponse.From(item));
+        var response = item is null ? (IActionResult)NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
         return response;
     }
     // Compatibility route. Keep the original status codes, authorization and shared write budget.
@@ -97,7 +97,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         }
 
         var item = await importer.ImportAsync(assetId, cancellationToken);
-        return item is null ? NotFound() : Ok(ItemResponse.From(item));
+        return item is null ? NotFound() : Ok(await mapper.MapAsync(item, cancellationToken));
     }
 
     [HttpPost]
@@ -115,7 +115,7 @@ public sealed class ItemsController(ItemService itemService, ImportRobloxItemSer
         return item is null ? Conflict(new ProblemDetails { Status = 409, Title = "The Roblox asset already exists." }) : CreatedAtAction(nameof(GetById), new
         {
             id = item.Id
-        }, ItemResponse.From(item));
+        }, await mapper.MapAsync(item, cancellationToken));
     }
 }
 

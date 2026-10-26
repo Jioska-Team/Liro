@@ -60,6 +60,58 @@ internal static class CatalogQueryTests
             Check.That(!Liro.Api.Contracts.CatalogCursorCodec.TryDecode(new string('a', 10000), nameOptions, out _),
                 "Oversized cursor accepted");
         });
+        suite.AsyncTest("CatalogQueries_PricesAndLimitedRapAcrossBrowseRoutes", async () =>
+        {
+            await using var host = await Host.Start();
+            foreach (var route in new[]
+            {
+                "?pageSize=100", "/feed?pageSize=100", "?sort=price&direction=asc&pageSize=100",
+                "/feed?sort=rap&direction=desc&pageSize=100", "?limited=limiteds&q=alpha",
+                "/feed?limited=limiteds&q=alpha"
+            })
+            {
+                host.Db.ChangeTracker.Clear();
+                using var page = await host.Json(route);
+                var items = page.RootElement.GetProperty("items").EnumerateArray().ToArray();
+                Check.That(items.Length == (route.Contains("q=alpha") ? 2 : 8), "Price assertions need the complete expected page: " + route);
+                foreach (var item in items)
+                {
+                    var i = checked((int)item.GetProperty("robloxAssetId").GetInt64() - 1);
+                    var rap = Statuses[i] is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique ? Raps[i] : null;
+                    AssertPrices(item, OriginalPrices[i], Prices[i], rap, route);
+                }
+            }
+        });
+        suite.AsyncTest("CatalogQueries_ComponentAndParentPricesUsePersistedMarketData", async () =>
+        {
+            await using var host = await Host.Start();
+            var observedAt = new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc);
+            var bundle = new Item(900, "Discounted bundle", marketStatus: ItemMarketStatus.Normal, itemType: CatalogItemType.Bundle);
+            bundle.UpdateBundleComponents([1, 2, 7, 999], observedAt);
+            bundle.ObserveMarket(new ItemMarketData { PrimaryPriceRobux = 40000, PriceBeforeDiscountRobux = 50000, IsOffSale = false }, observedAt, "catalog-query-test");
+            host.Db.Items.Add(bundle);
+            host.Db.Set<MarketWatch>().Add(new MarketWatch { ItemId = bundle.Id, NextCheckAtUtc = observedAt, RecentAveragePrice = 999 });
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+
+            using var contents = await host.Json("/bundles/900/components");
+            AssertPrices(contents.RootElement.GetProperty("bundle"), 50000, 40000, null, "bundle");
+            var components = contents.RootElement.GetProperty("components").EnumerateArray().ToArray();
+            Check.That(components.Select(x => x.GetProperty("robloxAssetId").GetInt64()).SequenceEqual(new long[] { 1, 2, 7 }),
+                "Price mapping changed component membership");
+            foreach (var component in components)
+            {
+                var i = checked((int)component.GetProperty("robloxAssetId").GetInt64() - 1);
+                AssertPrices(component, OriginalPrices[i], Prices[i], Raps[i], "component");
+            }
+            Check.That(contents.RootElement.GetProperty("pendingAssetIds").EnumerateArray().Select(x => x.GetInt64()).SequenceEqual(new long[] { 999 }),
+                "Price mapping changed pending component IDs");
+            host.Db.ChangeTracker.Clear();
+            using var parents = await host.Json("/assets/1/bundles");
+            var parent = parents.RootElement.EnumerateArray().Single();
+            Check.That(parent.GetProperty("id").GetGuid() == bundle.Id, "Wrong parent returned");
+            AssertPrices(parent, 50000, 40000, null, "parent");
+        });
         suite.AsyncTest("CatalogQueries_LimitedFiltersBeforePagination", async () =>
         {
             await using var host = await Host.Start();
@@ -171,6 +223,7 @@ internal static class CatalogQueryTests
     }
 
     private static readonly string[] Names = ["Zulu", "Alpha", "Alpha", "lower", "100%_special\\hat", "alpha", "Omega", "Missing"];
+    private static readonly long?[] OriginalPrices = [150, 0, null, null, 75, null, null, null];
     private static readonly decimal?[] Prices = [100, 0, 100, null, 50, null, null, null];
     private static readonly decimal?[] Raps = [10.123456m, 0, 10.123456m, 2.2m, null, 50, null, null];
     private static readonly decimal?[] Sales = [2.123456m, 0, 2.123456m, 7, null, null, null, null];
@@ -190,6 +243,16 @@ internal static class CatalogQueryTests
     }
     private static long[] Ids(JsonDocument document) => document.RootElement.GetProperty("items").EnumerateArray()
         .Select(x => x.GetProperty("robloxAssetId").GetInt64()).ToArray();
+
+    private static void AssertPrices(JsonElement item, decimal? original, decimal? current, decimal? rap, string route)
+    {
+        foreach (var (field, expected) in new[] { ("originalPriceRobux", original), ("currentPriceRobux", current), ("rapRobux", rap) })
+        {
+            Check.That(item.TryGetProperty(field, out var value), "Missing price field " + field + " in " + route);
+            Check.That(expected.HasValue ? value.ValueKind == JsonValueKind.Number && value.GetDecimal() == expected.Value
+                : value.ValueKind == JsonValueKind.Null, "Incorrect " + field + " for " + item.GetProperty("robloxAssetId") + " in " + route);
+        }
+    }
 
     private sealed class Host : IAsyncDisposable
     {
@@ -227,7 +290,8 @@ internal static class CatalogQueryTests
                 item.UpdateDetails(new ItemCatalogDetails { CreatorId = i == 9 ? 2 : 1, CreatorType = "User",
                     AssetTypeId = i == 8 ? 28 : 8, CreatedAtUtc = Created(i) });
                 if (i < 6)
-                    item.ObserveMarket(new ItemMarketData { LowestResalePriceRobux = (long?)Prices[i] }, new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc), "catalog-query-test");
+                    item.ObserveMarket(new ItemMarketData { LowestResalePriceRobux = (long?)Prices[i], HasResellers = Prices[i].HasValue,
+                        PriceBeforeDiscountRobux = OriginalPrices[i] }, new DateTime(2026, 1, 3, 0, 0, 0, DateTimeKind.Utc), "catalog-query-test");
                 db.Items.Add(item);
                 if (i < 6)
                     db.Set<MarketWatch>().Add(new MarketWatch { ItemId = item.Id, NextCheckAtUtc = DateTime.UtcNow, RecentAveragePrice = Raps[i], DailySales = Sales[i] });
@@ -242,6 +306,7 @@ internal static class CatalogQueryTests
             builder.Services.RemoveAll<ImportRobloxItemService>();
             builder.Services.AddControllers().AddApplicationPart(typeof(CatalogController).Assembly);
             builder.Services.AddSingleton<ICatalogBrowseRepository>(new CatalogBrowseRepository(db));
+            builder.Services.AddSingleton<IItemMarketSummaryRepository>(new ItemMarketSummaryRepository(db));
             var app = builder.Build();
             app.MapControllers();
             await app.StartAsync();

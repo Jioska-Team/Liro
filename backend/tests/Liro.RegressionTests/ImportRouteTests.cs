@@ -99,6 +99,7 @@ internal static class ImportRouteTests
             builder.Configuration["Security:AdminApiKey"] = Key;
             builder.WebHost.UseUrls("http://127.0.0.1:0");
             builder.Services.AddLiroApi(builder.Configuration);
+            builder.Services.AddSingleton<IItemMarketSummaryRepository>(new ItemPriceTests.RapStore());
             builder.Services.AddControllers().AddApplicationPart(typeof(ItemsController).Assembly);
             builder.Services.AddSingleton(new ItemService(repository));
             builder.Services.AddSingleton(new ImportRobloxItemService(remote, repository, new Thumbnail(), NullLogger<ImportRobloxItemService>.Instance, new Failures(), new CatalogRefreshPolicy()));

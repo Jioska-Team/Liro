@@ -12,6 +12,7 @@ public static class ApiServiceExtensions
         services.AddControllers();
         services.AddOpenApi(ApiOpenApi.Configure);
         services.AddScoped<ItemService>();
+        services.AddScoped<Liro.Api.Contracts.ItemResponseMapper>();
         services.AddScoped<ImportRobloxItemService>();
         services.AddProblemDetails();
         services.AddExceptionHandler<ApiExceptionHandler>();
