@@ -11,16 +11,31 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
 {
     public async Task<LatestCatalog> BrowseLatestAsync(CancellationToken ct)
     {
-        var visible = db.Items.AsNoTracking().Include(x => x.MarketState)
-            .Where(x => x.CreatorId == 1 && x.CreatorType == "User").Where(CatalogVisibility.Visible);
-        var items = await visible.OrderByDescending(x => x.FirstSeenAt).ThenBy(x => x.Id)
-            .Take(30).ToListAsync(ct);
-        // Unknown historical conversion dates remain null. Initial imports only fill the tail.
-        var limiteds = await visible.Where(x => x.MarketStatus == ItemMarketStatus.Limited
-                || x.MarketStatus == ItemMarketStatus.LimitedUnique)
-            .OrderByDescending(x => x.BecameLimitedAtUtc.HasValue).ThenByDescending(x => x.BecameLimitedAtUtc)
-            .ThenByDescending(x => x.BecameLimitedAtUtc == null ? (DateTime?)x.FirstSeenAt : null)
-            .ThenBy(x => x.Id).Take(30).ToListAsync(ct);
+        const int limit = 30;
+
+        var visible = db.Items
+            .AsNoTracking()
+            .Include(x => x.MarketState)
+            .Where(x => x.CreatorId == 1 && x.CreatorType == "User")
+            .Where(CatalogVisibility.Visible);
+
+        var items = await visible
+            .OrderByDescending(x => x.FirstSeenAt)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .ToListAsync(ct);
+
+        var limiteds = await visible
+        .Where(x => x.MarketStatus == ItemMarketStatus.Limited ||
+                    x.MarketStatus == ItemMarketStatus.LimitedUnique)
+        .OrderByDescending(x => x.BecameLimitedAtUtc.HasValue)
+        .ThenByDescending(x => x.BecameLimitedAtUtc)
+        .ThenByDescending(x => x.LimitedHistoricalOrderAtUtc)
+        .ThenByDescending(x => x.FirstSeenAt)
+        .ThenBy(x => x.Id)
+        .Take(limit)
+        .ToListAsync(ct);
+
         return new(items, limiteds);
     }
 

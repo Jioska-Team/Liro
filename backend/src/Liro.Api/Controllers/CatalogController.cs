@@ -12,7 +12,7 @@ namespace Liro.Api.Controllers;
 public sealed class CatalogController(ICatalogBrowseRepository repository, ItemResponseMapper mapper) : ControllerBase
 {
     [HttpGet("latest")]
-    [EndpointDescription("Up to 30 visible official items ordered by registration in Liro, newest first, and 30 Limiteds. Confirmed conversions come first by detection time; initial imports with unknown conversion dates follow by registration. Equal timestamps sort by internal ID. Uses stored data only.")]
+    [EndpointDescription("Up to 30 visible official items ordered by registration in Liro, newest first, and 30 Limiteds. Confirmed conversions come first by detection time, followed by manually ordered historical Limiteds; remaining initial imports follow by registration. Manual ordering is not a conversion date. Equal timestamps sort by internal ID. Uses stored data only.")]
     [ProducesResponseType<LatestCatalogResponse>(200)]
     public async Task<IActionResult> Latest(CancellationToken cancellationToken)
     {

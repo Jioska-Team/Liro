@@ -100,6 +100,9 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<DateTime?>("LimitedFirstObservedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LimitedHistoricalOrderAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("MarketStatus")
                         .IsRequired()
                         .HasMaxLength(30)
