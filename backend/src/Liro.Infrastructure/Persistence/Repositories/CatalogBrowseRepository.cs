@@ -26,8 +26,9 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
             .ToListAsync(ct);
 
         var limiteds = await visible
-            .Where(x => x.MarketStatus == ItemMarketStatus.Limited ||
-                        x.MarketStatus == ItemMarketStatus.LimitedUnique)
+            .Where(x => x.BecameLimitedAtUtc != null &&
+                        (x.MarketStatus == ItemMarketStatus.Limited ||
+                        x.MarketStatus == ItemMarketStatus.LimitedUnique))
             .OrderByDescending(x => x.BecameLimitedAtUtc)
             .ThenBy(x => x.Id)
             .Take(limit)
