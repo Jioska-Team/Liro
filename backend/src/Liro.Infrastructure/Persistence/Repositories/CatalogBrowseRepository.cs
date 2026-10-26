@@ -20,6 +20,10 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
             .Where(CatalogVisibility.Visible);
 
         var items = await visible
+            .Where(x =>
+                x.ItemType == CatalogItemType.Bundle || !db.Items.Any(bundle =>
+                    bundle.ItemType == CatalogItemType.Bundle &&
+                    bundle.BundleComponentAssetIds.Contains(x.RobloxAssetId)))
             .OrderByDescending(x => x.FirstSeenAt)
             .ThenBy(x => x.Id)
             .Take(limit)
