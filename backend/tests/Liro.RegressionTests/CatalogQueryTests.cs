@@ -27,79 +27,72 @@ internal static class CatalogQueryTests
 {
     public static void Register(RegressionSuite suite)
     {
-        suite.AsyncTest("CatalogLatest_HistoricalOrderMigrationLeavesDatesUnknown", async () =>
+        suite.AsyncTest("CatalogLatest_RemoveHistoricalOrderPreservesRegistrationAndDetection", async () =>
         {
             await using var host = await Host.Start();
             var before = await host.Db.Items.ToDictionaryAsync(x => x.Id,
                 x => new { x.FirstSeenAt, x.BecameLimitedAtUtc, x.LimitedFirstObservedAtUtc, x.MarketStatusObservedAtUtc });
-            await host.Db.Database.ExecuteSqlRawAsync("ALTER TABLE \"Items\" DROP COLUMN \"LimitedHistoricalOrderAtUtc\"");
-            var migration = new Liro.Infrastructure.Persistence.Migrations.AddLimitedHistoricalOrder();
-            var commands = host.Db.GetService<IMigrationsSqlGenerator>().Generate(migration.UpOperations, host.Db.Model);
-            foreach (var command in commands)
+            var generator = host.Db.GetService<IMigrationsSqlGenerator>();
+            // Recreate only the removed column in this disposable schema, with populated manual keys.
+            foreach (var command in generator.Generate(new Liro.Infrastructure.Persistence.Migrations.AddLimitedHistoricalOrder().UpOperations, host.Db.Model))
+                await host.Db.Database.ExecuteSqlRawAsync(command.CommandText);
+            await host.Db.Database.ExecuteSqlRawAsync("UPDATE \"Items\" SET \"LimitedHistoricalOrderAtUtc\" = TIMESTAMPTZ '2026-01-01 00:00:00+00'");
+            var removal = new Liro.Infrastructure.Persistence.Migrations.RemoveLimitedHistoricalOrder();
+            foreach (var command in generator.Generate(removal.UpOperations, host.Db.Model))
                 await host.Db.Database.ExecuteSqlRawAsync(command.CommandText);
             host.Db.ChangeTracker.Clear();
             var after = await host.Db.Items.ToArrayAsync();
-            Check.That(after.Length == before.Count && after.All(x => x.LimitedHistoricalOrderAtUtc is null
-                && x.FirstSeenAt == before[x.Id].FirstSeenAt && x.BecameLimitedAtUtc == before[x.Id].BecameLimitedAtUtc
+            Check.That(after.Length == before.Count && after.All(x => x.FirstSeenAt == before[x.Id].FirstSeenAt
+                && x.BecameLimitedAtUtc == before[x.Id].BecameLimitedAtUtc
                 && x.LimitedFirstObservedAtUtc == before[x.Id].LimitedFirstObservedAtUtc
                 && x.MarketStatusObservedAtUtc == before[x.Id].MarketStatusObservedAtUtc),
-                "Adding manual order metadata must not seed artificial dates or change observations");
-            Check.That(!host.Db.Database.HasPendingModelChanges(), "Historical order migration and EF model differ");
+                "Removing the manual order column changed registration or conversion observations");
+            var remaining = await host.Db.Database.SqlQueryRaw<int>("""
+                SELECT count(*)::integer AS "Value" FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = 'Items' AND column_name = 'LimitedHistoricalOrderAtUtc'
+                """).SingleAsync();
+            Check.That(remaining == 0 && host.Db.Model.FindEntityType(typeof(Item))!.FindProperty("LimitedHistoricalOrderAtUtc") is null,
+                "The auxiliary column remains in the database or active EF model");
+            Check.That(!host.Db.Database.HasPendingModelChanges(), "The removal migration and EF model differ");
         });
-        suite.AsyncTest("CatalogLatest_ManualHistoricalOrderPreservesObservedDates", async () =>
+        suite.AsyncTest("CatalogLatest_FirstSeenOrderIgnoresLaterConversionsAndMetadata", async () =>
         {
             await using var host = await Host.Start();
             var baseline = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-            var rows = await host.Db.Items.OrderBy(x => x.RobloxAssetId).ToArrayAsync();
-            foreach (var row in rows)
-                host.Db.Entry(row).Property(x => x.FirstSeenAt).CurrentValue = baseline.AddDays(row.RobloxAssetId);
-            var converted = new Item(800, "Confirmed conversion", marketStatus: ItemMarketStatus.Normal, observedAtUtc: baseline);
+            foreach (var row in await host.Db.Items.ToArrayAsync())
+                host.Db.Entry(row).Property(x => x.FirstSeenAt).CurrentValue = baseline.AddDays(row.RobloxAssetId == 2 ? 5 : row.RobloxAssetId);
+            var converted = new Item(800, "Older registration", marketStatus: ItemMarketStatus.Normal, observedAtUtc: baseline);
             converted.UpdateDetails(new ItemCatalogDetails { CreatorId = 1, CreatorType = "User", AssetTypeId = 8 });
-            converted.UpdateCatalogData(converted.Name, null, ItemMarketStatus.Limited, baseline.AddDays(1));
+            converted.UpdateCatalogData(converted.Name, null, ItemMarketStatus.Limited, baseline.AddDays(20));
+            host.Db.Entry(converted).Property(x => x.FirstSeenAt).CurrentValue = baseline.AddDays(-1);
             host.Db.Items.Add(converted);
             await host.Db.SaveChangesAsync();
             host.Db.ChangeTracker.Clear();
-            using var before = await host.Json("/latest");
-            var originalArrivals = before.RootElement.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToArray();
-            var originalDates = await host.Db.Items.ToDictionaryAsync(x => x.Id,
-                x => new { x.FirstSeenAt, x.BecameLimitedAtUtc, x.LimitedFirstObservedAtUtc, x.MarketStatusObservedAtUtc });
-            // The manual dates are ordering keys only; ties use the internal ID. A real conversion stays first.
-            await host.Db.Items.Where(x => x.RobloxAssetId == 1 || x.RobloxAssetId == 2)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LimitedHistoricalOrderAtUtc, baseline.AddMonths(6)));
-            await host.Db.Items.Where(x => x.RobloxAssetId == 3)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LimitedHistoricalOrderAtUtc, baseline.AddMonths(5)));
-            // Manual keys cannot make a normal, foreign, or hidden component appear as a visible Limited.
-            await host.Db.Items.Where(x => x.RobloxAssetId == 4 || x.RobloxAssetId == 9 || x.RobloxAssetId == 10)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LimitedHistoricalOrderAtUtc, baseline.AddYears(1)));
-            host.Db.ChangeTracker.Clear();
-            using var ordered = await host.Json("/latest");
             long[] LimitedIds(JsonDocument page) => page.RootElement.GetProperty("limiteds").EnumerateArray()
                 .Select(x => x.GetProperty("robloxItemId").GetInt64()).ToArray();
-            var expected = new long[] { 800, 1, 2, 3, 8, 7, 5 };
-            Check.That(LimitedIds(ordered).SequenceEqual(expected),
-                "Manual historical order must follow confirmed conversions and precede undated imports, with stable ties");
-            Check.That(ordered.RootElement.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).SequenceEqual(originalArrivals),
-                "Manual historical keys changed the recent arrivals order");
-            Check.That(!ordered.RootElement.GetProperty("limiteds").EnumerateArray().Any(x => x.TryGetProperty("limitedHistoricalOrderAtUtc", out _)),
-                "Manual presentation metadata leaked into the public card contract");
-            foreach (var row in await host.Db.Items.ToArrayAsync())
-            {
-                var original = originalDates[row.Id];
-                Check.That(row.FirstSeenAt == original.FirstSeenAt && row.BecameLimitedAtUtc == original.BecameLimitedAtUtc
-                    && row.LimitedFirstObservedAtUtc == original.LimitedFirstObservedAtUtc && row.MarketStatusObservedAtUtc == original.MarketStatusObservedAtUtc,
-                    "Manual ordering fabricated or changed a registration, conversion, or observation date");
-            }
-            var renamed = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 3);
-            renamed.UpdateCatalogData("Renamed historical Limited", null, renamed.MarketStatus, baseline.AddYears(2));
+            using var before = await host.Json("/latest");
+            Check.That(LimitedIds(before).SequenceEqual(new long[] { 8, 7, 2, 5, 3, 1, 800 }),
+                "Limiteds must use FirstSeenAt descending only, with internal ID ties and no conversion priority");
+            var originalArrivals = before.RootElement.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToArray();
+            var registrations = await host.Db.Items.ToDictionaryAsync(x => x.Id, x => x.FirstSeenAt);
+            var newlyLimited = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 4);
+            var detected = baseline.AddYears(2);
+            newlyLimited.UpdateCatalogData("Newly converted", null, ItemMarketStatus.Limited, detected);
+            var renamed = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 1);
+            renamed.UpdateCatalogData("Renamed Limited", null, renamed.MarketStatus, detected);
             await host.Db.SaveChangesAsync();
             host.Db.ChangeTracker.Clear();
-            using var refreshed = await host.Json("/latest");
-            Check.That(LimitedIds(refreshed).SequenceEqual(expected)
-                && await host.Db.Items.Where(x => x.RobloxAssetId == 3).Select(x => x.LimitedHistoricalOrderAtUtc).SingleAsync() == baseline.AddMonths(5)
-                && await host.Db.OutboxMessages.CountAsync() == 1,
-                "Refreshing metadata lost manual order or emitted a fabricated conversion event");
+            using var after = await host.Json("/latest");
+            Check.That(LimitedIds(after).SequenceEqual(new long[] { 8, 7, 2, 5, 4, 3, 1, 800 }),
+                "A later conversion must enter at its original registration position, not jump to the front");
+            Check.That(after.RootElement.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).SequenceEqual(originalArrivals),
+                "Conversion or metadata changes reordered recent arrivals");
+            Check.That((await host.Db.Items.ToArrayAsync()).All(x => x.FirstSeenAt == registrations[x.Id])
+                && await host.Db.Items.Where(x => x.RobloxAssetId == 4).Select(x => x.BecameLimitedAtUtc).SingleAsync() == detected
+                && await host.Db.OutboxMessages.CountAsync() == 2,
+                "Registration order must preserve independent conversion detection and original registration dates");
         });
-        suite.AsyncTest("CatalogLatest_ThirtyOwnRegistrationsAndConfirmedConversions", async () =>
+        suite.AsyncTest("CatalogLatest_ThirtyByRegistrationIgnoringConversionDates", async () =>
         {
             await using var host = await Host.Start();
             using var initial = await host.Json("/latest");
@@ -118,7 +111,7 @@ internal static class CatalogQueryTests
                 item.UpdateDetails(new ItemCatalogDetails { CreatorId = i == 37 ? 2 : 1, CreatorType = "User",
                     AssetTypeId = i == 38 ? 28 : 8, CreatedAtUtc = baseline.AddDays(100 - i) });
                 host.Db.Entry(item).Property(x => x.FirstSeenAt).CurrentValue = baseline.AddDays(i + 1);
-                // Equal conversion dates exercise the stable ID tie break.
+                // Later conversion dates must not affect the registration order.
                 if (i < 3)
                     host.Db.Entry(item).Property("BecameLimitedAtUtc").CurrentValue = baseline.AddDays(i == 2 ? 95 : 90);
                 // A free listing is available, unlike a missing price.
@@ -135,8 +128,8 @@ internal static class CatalogQueryTests
             long[] ReadIds(JsonElement[] rows) => rows.Select(x => x.GetProperty("robloxItemId").GetInt64()).ToArray();
             Check.That(ReadIds(items).SequenceEqual(Enumerable.Range(107, 30).Reverse().Select(x => (long)x)),
                 "Latest arrivals must be the 30 newest Liro registrations, not Roblox creation or hidden items");
-            Check.That(ReadIds(limiteds).SequenceEqual(new long[] { 102, 100, 101 }.Concat(Enumerable.Range(108, 27).Reverse().Select(x => (long)x))),
-                "Latest Limiteds must prioritize detected conversions then use registration only for undated imports");
+            Check.That(ReadIds(limiteds).SequenceEqual(Enumerable.Range(105, 30).Reverse().Select(x => (long)x)),
+                "Latest Limiteds must be the 30 newest registrations regardless of detected conversion dates");
             Check.That(items[0].GetProperty("currentPriceRobux").GetInt64() == 0
                 && items[1].GetProperty("currentPriceRobux").ValueKind == JsonValueKind.Null,
                 "Latest endpoint must distinguish zero price from unavailable price");

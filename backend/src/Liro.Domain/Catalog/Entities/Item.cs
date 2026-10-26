@@ -113,8 +113,6 @@ public sealed class Item : IHasDomainEvents
     public DateTime? LimitedFirstObservedAtUtc { get; private set; }
     public DateTime? BecameLimitedAtUtc { get; private set; }
     public bool HasBeenLimited { get; private set; }
-    // Manual presentation order for historical Limiteds; never a conversion or observation date.
-    public DateTime? LimitedHistoricalOrderAtUtc { get; private set; }
 
     public DateTime LastUpdatedAt
     {

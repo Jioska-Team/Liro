@@ -26,15 +26,12 @@ public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRe
             .ToListAsync(ct);
 
         var limiteds = await visible
-        .Where(x => x.MarketStatus == ItemMarketStatus.Limited ||
-                    x.MarketStatus == ItemMarketStatus.LimitedUnique)
-        .OrderByDescending(x => x.BecameLimitedAtUtc.HasValue)
-        .ThenByDescending(x => x.BecameLimitedAtUtc)
-        .ThenByDescending(x => x.LimitedHistoricalOrderAtUtc)
-        .ThenByDescending(x => x.FirstSeenAt)
-        .ThenBy(x => x.Id)
-        .Take(limit)
-        .ToListAsync(ct);
+            .Where(x => x.MarketStatus == ItemMarketStatus.Limited ||
+                        x.MarketStatus == ItemMarketStatus.LimitedUnique)
+            .OrderByDescending(x => x.FirstSeenAt)
+            .ThenBy(x => x.Id)
+            .Take(limit)
+            .ToListAsync(ct);
 
         return new(items, limiteds);
     }
