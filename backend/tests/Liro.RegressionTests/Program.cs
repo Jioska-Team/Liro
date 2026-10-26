@@ -1,5 +1,14 @@
 using Liro.RegressionTests;
 
+if (args.Length == 1 && args[0] == "--limited-conversions-only")
+{
+    var targeted = new RegressionSuite();
+    LimitedConversionTests.Register(targeted);
+    CatalogTests.Register(targeted);
+    SearchDetailsTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
 // Explicit unit-only entry point: no PostgreSQL, Valkey, services or external HTTP.
 if (args.Length == 1 && args[0] == "--market-lanes-only")
 {
@@ -110,6 +119,7 @@ ComponentRecoveryTests.Register(suite);
 BundleRelationTests.Register(suite);
 LimitedCoverageTests.Register(suite);
 CatalogTests.Register(suite);
+LimitedConversionTests.Register(suite);
 PriorityRefreshTests.Register(suite);
 SearchDetailsTests.Register(suite);
 DatabaseBatchTests.Register(suite);

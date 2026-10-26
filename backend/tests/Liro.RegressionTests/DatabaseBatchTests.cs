@@ -96,7 +96,7 @@ internal static class DatabaseBatchTests
                 var probe = new Probe { Existing = existing, Failures = [new() { AssetId = 1, NextAttemptAtUtc = DateTime.UtcNow.AddHours(-1) }] };
                 using var db = Database(probe);
                 var result = await Writer(db).WriteAsync(new Dictionary<CatalogItemKey, RobloxCatalogItem> { [new(1)] = remote }, false, default);
-                Check.That(result.Added == 0 && result.Updated == 0 && result.RetryIndividually.Count == 0
+                Check.That(result.Added == 0 && result.Updated == (stale ? 0 : 1) && result.RetryIndividually.Count == 0
                     && probe.Saves == (stale ? 0 : 1) && probe.DeletedFailures == (stale ? 0 : 1)
                     && probe.Snapshots == 0 && probe.Events == 0, "No-op observation changed market history or retry resolution");
             });

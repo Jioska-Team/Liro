@@ -120,7 +120,7 @@ internal static class SearchDetailsTests
             Check.That(repo.Items[new(1)].MarketState?.Source == "RobloxCatalogSearchV2" && repo.Items[new(1)].MarketState?.Data.PrimaryPriceRobux == 10,
                 "Search market observation lost price or provenance");
         });
-        suite.AsyncTest("Search corrects known limited and skips unchanged writes", async () =>
+        suite.AsyncTest("Search classification establishes baseline and persists observation freshness", async () =>
         {
             var item = new Item(1, "Old");
             var repo = new Repository(item);
@@ -134,8 +134,8 @@ internal static class SearchDetailsTests
             var observations = item.PendingMarketSnapshots.Count;
             await CatalogSearchPageProcessor.ProcessAsync(scopes, await client.GetPageAsync(CatalogSearchScope.Collectibles, true, null, default), false, new(), default);
             Check.That(item.MarketStatus == ItemMarketStatus.Limited && item.Restrictions.SequenceEqual(new[] { "Limited" })
-                && item.DomainEvents.Count == 1 && repo.Saves == 1 && item.PendingMarketSnapshots.Count == observations
-                && item.LastCheckedAt == checkedAt && catalog.Calls.Count == 0, "Known item skipped, unchanged data rewritten or duplicate event emitted");
+                && item.DomainEvents.Count == 0 && repo.Saves == 2 && item.PendingMarketSnapshots.Count == observations
+                && item.LastCheckedAt >= checkedAt && catalog.Calls.Count == 0, "Known item skipped, unchanged data rewritten or duplicate event emitted");
         });
         suite.AsyncTest("Limited monitor applies search details without confirmation requests", async () =>
         {

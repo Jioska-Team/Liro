@@ -116,30 +116,23 @@ public sealed class ImportRobloxItemService(IRobloxCatalogClient robloxCatalogCl
     // Callers validate identity/ownership and own persistence and external I/O.
     public static (Item Item, bool Save, bool ResolveFailure) ApplyObservation(Item? existing, RobloxCatalogItem remote)
     {
-        var fromSearch = remote.Source == "RobloxCatalogSearchV2";
-        // A slower search response must not overwrite a newer completed refresh.
-        if (fromSearch && existing?.LastCheckedAt is { } checkedAt && remote.ObservedAtUtc < checkedAt)
+        // Search and detail responses must not overwrite a newer accepted observation.
+        if (existing?.IsCatalogObservationStale(remote.ObservedAtUtc) == true)
             return (existing, false, false);
-        var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ItemType);
-        var catalogChanged = existing is null;
+        var item = existing ?? new Item(remote.AssetId, remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ItemType, remote.ObservedAtUtc);
         if (existing is not null)
         {
-            catalogChanged = item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus);
+            item.UpdateCatalogData(remote.Name, remote.CollectibleItemId, remote.MarketStatus, remote.ObservedAtUtc);
         }
 
         if (remote.Details is not null)
         {
-            catalogChanged |= item.UpdateDetails(remote.Details);
+            item.UpdateDetails(remote.Details);
         }
         if (remote.BundleComponentAssetIds is { } components)
-            catalogChanged |= item.UpdateBundleComponents(components, remote.ObservedAtUtc);
+            item.UpdateBundleComponents(components, remote.ObservedAtUtc);
 
-        if (fromSearch && existing is not null && !catalogChanged
-            && (remote.Market is null || item.MarketState?.Data == remote.Market))
-        {
-            return (item, false, true);
-        }
-
+        // Persist the observation watermark even when content is unchanged.
         if (remote.Market is not null)
         {
             item.ObserveMarket(remote.Market, remote.ObservedAtUtc, remote.Source);

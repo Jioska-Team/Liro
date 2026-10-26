@@ -9,6 +9,21 @@ namespace Liro.Infrastructure.Persistence.Repositories;
 
 public sealed class CatalogBrowseRepository(LiroDbContext db) : ICatalogBrowseRepository
 {
+    public async Task<LatestCatalog> BrowseLatestAsync(CancellationToken ct)
+    {
+        var visible = db.Items.AsNoTracking().Include(x => x.MarketState)
+            .Where(x => x.CreatorId == 1 && x.CreatorType == "User").Where(CatalogVisibility.Visible);
+        var items = await visible.OrderByDescending(x => x.FirstSeenAt).ThenBy(x => x.Id)
+            .Take(30).ToListAsync(ct);
+        // Unknown historical conversion dates remain null. Initial imports only fill the tail.
+        var limiteds = await visible.Where(x => x.MarketStatus == ItemMarketStatus.Limited
+                || x.MarketStatus == ItemMarketStatus.LimitedUnique)
+            .OrderByDescending(x => x.BecameLimitedAtUtc.HasValue).ThenByDescending(x => x.BecameLimitedAtUtc)
+            .ThenByDescending(x => x.BecameLimitedAtUtc == null ? (DateTime?)x.FirstSeenAt : null)
+            .ThenBy(x => x.Id).Take(30).ToListAsync(ct);
+        return new(items, limiteds);
+    }
+
     public async Task<IReadOnlyList<CatalogItemKey>> GetBundlesMissingThumbnailAsync(CancellationToken ct) =>
         await db.Items.AsNoTracking().Where(x => x.ItemType == CatalogItemType.Bundle && x.ThumbnailUrl == null
             && (x.ThumbnailCheckedAtUtc == null || x.ThumbnailCheckedAtUtc < DateTime.UtcNow.AddHours(-1)))

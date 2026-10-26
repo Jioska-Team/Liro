@@ -16,12 +16,15 @@ public sealed record CatalogBrowseOptions(
         && Sort == CatalogSort.Created && Descending;
 }
 
+public sealed record LatestCatalog(IReadOnlyList<Item> Items, IReadOnlyList<Item> Limiteds);
 public sealed record CatalogPage(IReadOnlyList<Item> Items, bool HasMore, CatalogCursor? NextCursor = null);
 public sealed record CatalogCursor(DateTime? CreatedAtUtc, Guid Id, string? Name = null, decimal? Value = null);
 public sealed record BundleContents(Item Bundle, IReadOnlyList<Item> Components, IReadOnlyList<long> PendingAssetIds);
 
 public interface ICatalogBrowseRepository
 {
+    Task<LatestCatalog> BrowseLatestAsync(CancellationToken ct) =>
+        throw new NotSupportedException("Latest catalog queries are not supported.");
     Task<CatalogPage> BrowseAsync(int page, int pageSize, CancellationToken ct);
     Task<CatalogPage> BrowseAfterAsync(CatalogCursor? after, int pageSize, CancellationToken ct);
     Task<CatalogPage> BrowseAsync(int page, int pageSize, CatalogBrowseOptions options, CancellationToken ct) =>

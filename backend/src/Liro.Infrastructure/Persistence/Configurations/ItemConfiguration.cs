@@ -16,6 +16,8 @@ public sealed class ItemConfiguration : IEntityTypeConfiguration<Item>
         builder.HasOne(x => x.MarketState).WithOne().HasForeignKey<ItemMarketState>(x => x.ItemId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(x => x.Version).IsRowVersion();
         builder.HasIndex(x => x.NextRefreshAt);
+        builder.HasIndex(x => new { x.FirstSeenAt, x.Id });
+        builder.HasIndex(x => new { x.BecameLimitedAtUtc, x.FirstSeenAt, x.Id });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.RobloxAssetId).IsRequired();
         // Generated for existing rows too; item names and localization are not URL identifiers.

@@ -11,6 +11,16 @@ namespace Liro.Api.Controllers;
 [Route("api/v1/catalog")]
 public sealed class CatalogController(ICatalogBrowseRepository repository, ItemResponseMapper mapper) : ControllerBase
 {
+    [HttpGet("latest")]
+    [EndpointDescription("Up to 30 visible official items ordered by registration in Liro, newest first, and 30 Limiteds. Confirmed conversions come first by detection time; initial imports with unknown conversion dates follow by registration. Equal timestamps sort by internal ID. Uses stored data only.")]
+    [ProducesResponseType<LatestCatalogResponse>(200)]
+    public async Task<IActionResult> Latest(CancellationToken cancellationToken)
+    {
+        var result = await repository.BrowseLatestAsync(cancellationToken);
+        var mapped = await mapper.MapAsync(result.Items.Concat(result.Limiteds).ToArray(), cancellationToken);
+        return Ok(new LatestCatalogResponse(mapped.Take(result.Items.Count).ToArray(), mapped.Skip(result.Items.Count).ToArray()));
+    }
+
     [HttpGet]
     [EndpointDescription("Stored visible official catalog. page: 1-10000; pageSize: 1-100 (default 24). " + CatalogQuery.Description)]
     [ProducesResponseType<CatalogPageResponse>(200)]

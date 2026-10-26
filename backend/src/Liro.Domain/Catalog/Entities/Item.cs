@@ -108,6 +108,12 @@ public sealed class Item : IHasDomainEvents
     {
         get; private set;
     }
+    // Provider observation times, never Roblox creation/modification dates.
+    public DateTime? MarketStatusObservedAtUtc { get; private set; }
+    public DateTime? LimitedFirstObservedAtUtc { get; private set; }
+    public DateTime? BecameLimitedAtUtc { get; private set; }
+    public bool HasBeenLimited { get; private set; }
+
     public DateTime LastUpdatedAt
     {
         get; private set;
@@ -132,7 +138,7 @@ public sealed class Item : IHasDomainEvents
     {
     }
 
-    public Item(long robloxAssetId, string name, Guid? collectibleItemId = null, ItemMarketStatus marketStatus = ItemMarketStatus.Unknown, CatalogItemType itemType = CatalogItemType.Asset)
+    public Item(long robloxAssetId, string name, Guid? collectibleItemId = null, ItemMarketStatus marketStatus = ItemMarketStatus.Unknown, CatalogItemType itemType = CatalogItemType.Asset, DateTime? observedAtUtc = null)
     {
         new CatalogItemKey(robloxAssetId, itemType).Validate();
         ItemType = itemType;
@@ -143,31 +149,56 @@ public sealed class Item : IHasDomainEvents
         Name = name.Trim();
         CollectibleItemId = collectibleItemId;
         MarketStatus = marketStatus;
+        if (observedAtUtc is { Kind: not DateTimeKind.Utc })
+            throw new ArgumentException("UTC observation time required.", nameof(observedAtUtc));
         FirstSeenAt = LastUpdatedAt = NextRefreshAt = DateTime.UtcNow;
+        MarketStatusObservedAtUtc = observedAtUtc;
+        HasBeenLimited = marketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique;
+        if (HasBeenLimited)
+            LimitedFirstObservedAtUtc = observedAtUtc ?? FirstSeenAt;
     }
 
-    public bool UpdateCatalogData(string name, Guid? collectibleItemId, ItemMarketStatus marketStatus)
+    public bool UpdateCatalogData(string name, Guid? collectibleItemId, ItemMarketStatus marketStatus, DateTime? observedAtUtc = null)
     {
         Validate(name, collectibleItemId, marketStatus);
-        name = name.Trim();
-        if (Name == name && CollectibleItemId == collectibleItemId && MarketStatus == marketStatus)
-        {
+        var observed = observedAtUtc ?? DateTime.UtcNow;
+        if (observed.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("UTC observation time required.", nameof(observedAtUtc));
+        if (IsCatalogObservationStale(observed))
             return false;
-        }
 
         var previous = MarketStatus;
+        // An incomplete classification cannot erase a previously known state.
+        if (marketStatus == ItemMarketStatus.Unknown && previous != ItemMarketStatus.Unknown)
+            marketStatus = previous;
+        name = name.Trim();
+        var changed = Name != name || CollectibleItemId != collectibleItemId || previous != marketStatus;
+        MarketStatusObservedAtUtc = observed;
+        if (marketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique)
+        {
+            if (!HasBeenLimited && BecameLimitedAtUtc is null
+                && previous is ItemMarketStatus.Normal or ItemMarketStatus.Collectible)
+            {
+                BecameLimitedAtUtc = observed;
+                _domainEvents.Add(new ItemBecameLimited(Id, RobloxAssetId, observed));
+            }
+            // Initial imports and Unknown -> Limited observations are a baseline, not a conversion.
+            LimitedFirstObservedAtUtc ??= observed;
+        }
+        HasBeenLimited |= previous is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique
+            || marketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique;
+
         Name = name;
         CollectibleItemId = collectibleItemId;
         MarketStatus = marketStatus;
-        LastUpdatedAt = DateTime.UtcNow;
-        if (previous is not (ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique)
-            && marketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique)
-        {
-            _domainEvents.Add(new ItemBecameLimited(Id, RobloxAssetId, LastUpdatedAt));
-        }
-
-        return true;
+        if (changed)
+            LastUpdatedAt = DateTime.UtcNow;
+        return changed;
     }
+
+    public bool IsCatalogObservationStale(DateTime observedAtUtc) =>
+        (MarketStatusObservedAtUtc is { } observed && observedAtUtc <= observed)
+        || (LastCheckedAt is { } checkedAt && observedAtUtc < checkedAt);
 
     public void MarkChecked(DateTime checkedAtUtc, TimeSpan refreshInterval)
     {

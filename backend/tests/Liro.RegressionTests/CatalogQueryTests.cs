@@ -13,6 +13,8 @@ using Liro.Infrastructure.Persistence.Repositories;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -25,6 +27,141 @@ internal static class CatalogQueryTests
 {
     public static void Register(RegressionSuite suite)
     {
+        suite.AsyncTest("CatalogLatest_ThirtyOwnRegistrationsAndConfirmedConversions", async () =>
+        {
+            await using var host = await Host.Start();
+            using var initial = await host.Json("/latest");
+            Check.That(initial.RootElement.GetProperty("items").GetArrayLength() == 8
+                && initial.RootElement.GetProperty("limiteds").GetArrayLength() == 6,
+                "Latest endpoint lost official catalog visibility or returned filler rows");
+            var baseline = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            await host.Db.Items.ExecuteUpdateAsync(s => s.SetProperty(x => x.FirstSeenAt, baseline));
+            for (var i = 0; i < 39; i++)
+            {
+                var limited = i < 35 || i >= 37;
+                var item = new Item(100 + i, "Recent " + i,
+                    marketStatus: limited ? ItemMarketStatus.LimitedUnique : ItemMarketStatus.Normal);
+                host.Db.Entry(item).Property(x => x.Id).CurrentValue = Guid.Parse("00000000-0000-0000-0000-" + (100 + i).ToString("D12"));
+                // Creation order deliberately opposes Liro registration order.
+                item.UpdateDetails(new ItemCatalogDetails { CreatorId = i == 37 ? 2 : 1, CreatorType = "User",
+                    AssetTypeId = i == 38 ? 28 : 8, CreatedAtUtc = baseline.AddDays(100 - i) });
+                host.Db.Entry(item).Property(x => x.FirstSeenAt).CurrentValue = baseline.AddDays(i + 1);
+                // Equal conversion dates exercise the stable ID tie break.
+                if (i < 3)
+                    host.Db.Entry(item).Property("BecameLimitedAtUtc").CurrentValue = baseline.AddDays(i == 2 ? 95 : 90);
+                // A free listing is available, unlike a missing price.
+                if (i == 36)
+                    item.ObserveMarket(new ItemMarketData { PrimaryPriceRobux = 0, IsOffSale = false }, baseline, "latest-test");
+                host.Db.Items.Add(item);
+            }
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+            host.Sql.Clear();
+            using var page = await host.Json("/latest");
+            var items = page.RootElement.GetProperty("items").EnumerateArray().ToArray();
+            var limiteds = page.RootElement.GetProperty("limiteds").EnumerateArray().ToArray();
+            long[] ReadIds(JsonElement[] rows) => rows.Select(x => x.GetProperty("robloxItemId").GetInt64()).ToArray();
+            Check.That(ReadIds(items).SequenceEqual(Enumerable.Range(107, 30).Reverse().Select(x => (long)x)),
+                "Latest arrivals must be the 30 newest Liro registrations, not Roblox creation or hidden items");
+            Check.That(ReadIds(limiteds).SequenceEqual(new long[] { 102, 100, 101 }.Concat(Enumerable.Range(108, 27).Reverse().Select(x => (long)x))),
+                "Latest Limiteds must prioritize detected conversions then use registration only for undated imports");
+            Check.That(items[0].GetProperty("currentPriceRobux").GetInt64() == 0
+                && items[1].GetProperty("currentPriceRobux").ValueKind == JsonValueKind.Null,
+                "Latest endpoint must distinguish zero price from unavailable price");
+            Check.That(!limiteds.Any(x => x.TryGetProperty("becameLimitedAtUtc", out _)),
+                "Internal detection timestamps must stay out of the public card payload");
+            Check.That(host.Sql.Count(x => x.Contains("LIMIT", StringComparison.OrdinalIgnoreCase)) >= 2,
+                "Latest collections must be bounded in the database");
+            await host.Db.Items.Where(x => x.RobloxAssetId == 134)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.LastUpdatedAt, baseline.AddDays(200)));
+            using var updated = await host.Json("/latest");
+            Check.That(updated.RootElement.GetRawText() != page.RootElement.GetRawText(), "Fixture metadata update did not occur");
+            Check.That(updated.RootElement.GetProperty("limiteds").EnumerateArray().Select(x => x.GetProperty("robloxItemId").GetInt64())
+                .SequenceEqual(ReadIds(limiteds)), "Unrelated metadata update reordered Limiteds");
+            foreach (var item in await host.Db.Items.Where(x => x.RobloxAssetId >= 100 && x.RobloxAssetId <= 102).ToArrayAsync())
+                host.Db.Entry(item).Property("BecameLimitedAtUtc").CurrentValue = null;
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+            using var baselineOnly = await host.Json("/latest");
+            Check.That(baselineOnly.RootElement.GetProperty("limiteds").EnumerateArray().Select(x => x.GetProperty("robloxItemId").GetInt64())
+                .SequenceEqual(Enumerable.Range(105, 30).Reverse().Select(x => (long)x)),
+                "Thirty historical Limiteds must remain available without inventing conversion dates");
+        });
+        suite.AsyncTest("LimitedConversion_PersistsObservationAndSingleOutboxEvent", async () =>
+        {
+            await using var host = await Host.Start();
+            var observed = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            var converted = new Item(500, "Normal", marketStatus: ItemMarketStatus.Normal, observedAtUtc: observed);
+            var importedLimited = new Item(501, "Imported Limited", marketStatus: ItemMarketStatus.Limited, observedAtUtc: observed);
+            var unknown = new Item(502, "Unknown", observedAtUtc: observed);
+            host.Db.Items.AddRange(converted, importedLimited, unknown);
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+            var recorded = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 500);
+            var registeredAt = recorded.FirstSeenAt;
+            recorded.UpdateCatalogData("Converted", null, ItemMarketStatus.Limited, observed.AddDays(1));
+            var formerlyUnknown = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 502);
+            formerlyUnknown.UpdateCatalogData("Discovered", null, ItemMarketStatus.Limited, observed.AddDays(1));
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+            recorded = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 500);
+            Check.That(recorded.BecameLimitedAtUtc == observed.AddDays(1)
+                && recorded.LimitedFirstObservedAtUtc == observed.AddDays(1)
+                && recorded.MarketStatusObservedAtUtc == observed.AddDays(1)
+                && recorded.FirstSeenAt == registeredAt,
+                "Reload lost the observed conversion date or changed registration time");
+            Check.That(await host.Db.Items.CountAsync(x => x.RobloxAssetId >= 501 && x.RobloxAssetId <= 502
+                && x.BecameLimitedAtUtc == null && x.LimitedFirstObservedAtUtc != null) == 2,
+                "Initial imports or Unknown classifications acquired invented conversion dates");
+            var message = await host.Db.OutboxMessages.SingleAsync();
+            Check.That(message.Type == "catalog.item-became-limited.v1" && message.OccurredAtUtc == observed.AddDays(1),
+                "Confirmed conversion and outbox timestamp were not persisted together");
+            recorded.UpdateCatalogData("Converted", null, ItemMarketStatus.Limited, observed.AddDays(2));
+            Check.That(!recorded.UpdateCatalogData("Stale normal", null, ItemMarketStatus.Normal, observed),
+                "Stale observation replaced a persisted conversion");
+            await host.Db.SaveChangesAsync();
+            host.Db.ChangeTracker.Clear();
+            recorded = await host.Db.Items.SingleAsync(x => x.RobloxAssetId == 500);
+            Check.That(recorded.MarketStatus == ItemMarketStatus.Limited && recorded.Name == "Converted"
+                && recorded.BecameLimitedAtUtc == observed.AddDays(1)
+                && recorded.MarketStatusObservedAtUtc == observed.AddDays(2)
+                && await host.Db.OutboxMessages.CountAsync() == 1,
+                "Repeated or stale observations changed the conversion date or duplicated its event");
+        });
+        suite.AsyncTest("LimitedConversion_MigrationPreservesUnknownHistoricalDates", async () =>
+        {
+            await using var host = await Host.Start();
+            var registered = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            await host.Db.Items.ExecuteUpdateAsync(s => s.SetProperty(x => x.FirstSeenAt, registered));
+            // Reproduce the predecessor schema inside this test's disposable schema only.
+            await host.Db.Database.ExecuteSqlRawAsync("""
+                DROP INDEX "IX_Items_FirstSeenAt_Id";
+                DROP INDEX "IX_Items_BecameLimitedAtUtc_FirstSeenAt_Id";
+                ALTER TABLE "Items" DROP COLUMN "BecameLimitedAtUtc", DROP COLUMN "HasBeenLimited",
+                    DROP COLUMN "LimitedFirstObservedAtUtc", DROP COLUMN "MarketStatusObservedAtUtc";
+                """);
+            Check.That(!host.Db.Database.HasPendingModelChanges(), "Limited detection model and migration snapshot differ");
+            var migration = new Liro.Infrastructure.Persistence.Migrations.TrackLimitedConversions();
+            var commands = host.Db.GetService<IMigrationsSqlGenerator>().Generate(migration.UpOperations, host.Db.Model);
+            foreach (var command in commands)
+                await host.Db.Database.ExecuteSqlRawAsync(command.CommandText);
+            host.Db.ChangeTracker.Clear();
+            var items = await host.Db.Items.ToArrayAsync();
+            Check.That(items.Length == 10 && items.All(x => x.FirstSeenAt == registered
+                && x.BecameLimitedAtUtc == null && x.LimitedFirstObservedAtUtc == null && x.MarketStatusObservedAtUtc == null),
+                "Migration fabricated historical dates or changed registration times");
+            Check.That(items.All(x => x.HasBeenLimited == (x.MarketStatus is ItemMarketStatus.Limited or ItemMarketStatus.LimitedUnique)),
+                "Migration did not preserve known Limited membership separately from unknown dates");
+        });
+        suite.AsyncTest("CatalogLatest_EmptyCatalogHasNoFabricatedRows", async () =>
+        {
+            await using var host = await Host.Start();
+            await host.Db.Items.ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatorId, 2));
+            using var page = await host.Json("/latest");
+            Check.That(page.RootElement.GetProperty("items").GetArrayLength() == 0
+                && page.RootElement.GetProperty("limiteds").GetArrayLength() == 0,
+                "Empty collections should not fabricate data or use a third-party fallback");
+        });
         suite.Test("CatalogQueries_CursorCodecTypedKeysAndBounds", () =>
         {
             var id = Guid.NewGuid();

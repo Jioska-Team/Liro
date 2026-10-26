@@ -19,10 +19,7 @@ public sealed record RobloxCatalogItem(long AssetId, string Name, Guid? Collecti
     {
         get; init;
     }
-    public DateTime ObservedAtUtc
-    {
-        get; init;
-    }
+    public DateTime ObservedAtUtc { get; init; } = DateTime.UtcNow;
     public string Source { get; init; } = "RobloxCatalogDetailsV1";
 }
 

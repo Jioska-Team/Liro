@@ -7,3 +7,6 @@ public sealed record CatalogPageResponse(IReadOnlyList<ItemResponse> Items, int 
 public sealed record BundleComponentsResponse(
     ItemResponse Bundle, IReadOnlyList<ItemResponse> Components,
     IReadOnlyList<long> PendingAssetIds, DateTime? RelationshipsObservedAtUtc);
+
+/// <summary>Up to 30 recently registered items and 30 Limiteds, with confirmed conversions before initial imports.</summary>
+public sealed record LatestCatalogResponse(IReadOnlyList<ItemResponse> Items, IReadOnlyList<ItemResponse> Limiteds);

@@ -50,6 +50,9 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<int?>("AssetTypeId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("BecameLimitedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.PrimitiveCollection<long[]>("BundleComponentAssetIds")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -80,6 +83,9 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("FirstSeenAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("HasBeenLimited")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("ItemType")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -91,10 +97,16 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("LastUpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("LimitedFirstObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("MarketStatus")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("MarketStatusObservedAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("MarketplaceUrl")
                         .IsRequired()
@@ -146,8 +158,12 @@ namespace Liro.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("NextRefreshAt");
 
+                    b.HasIndex("FirstSeenAt", "Id");
+
                     b.HasIndex("ItemType", "RobloxAssetId")
                         .IsUnique();
+
+                    b.HasIndex("BecameLimitedAtUtc", "FirstSeenAt", "Id");
 
                     b.ToTable("Items", (string)null);
                 });
