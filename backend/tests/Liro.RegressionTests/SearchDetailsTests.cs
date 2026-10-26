@@ -19,6 +19,32 @@ internal static class SearchDetailsTests
 {
     public static void Register(RegressionSuite suite)
     {
+        foreach (var imageState in new[] { "completed", "pending", "unavailable" })
+        {
+            suite.AsyncTest("Discovery thumbnail import: " + imageState, async () =>
+            {
+                var repo = new Repository();
+                var catalog = new FallbackCatalog();
+                var writer = new FailingWriter();
+                var images = new DiscoveryImages(imageState);
+                using var provider = Provider(repo, catalog, writer: writer, thumbnails: images);
+                using var http = Http([Entry(10)]);
+                var page = await Client(http).GetPageAsync(CatalogSearchScope.All, false, null, default);
+                var scopes = provider.GetRequiredService<IServiceScopeFactory>();
+                var first = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, false, new(), default, refreshThumbnails: true);
+                Check.That(first.Added == 1 && first.Failed == 0 && repo.Items.ContainsKey(new(10)),
+                    "Thumbnail availability prevented catalog persistence");
+                Check.That(images.Calls == 1 && catalog.Calls.Count == 0 && writer.Calls == 0,
+                    "Discovery skipped thumbnails or refetched existing details");
+                var saved = repo.Items[new(10)];
+                Check.That(saved.ThumbnailUrl == (imageState == "completed" ? "https://tr.rbxcdn.com/test.webp" : null),
+                    "Thumbnail URL was lost or fabricated");
+                Check.That(saved.ThumbnailCheckedAtUtc.HasValue, "Thumbnail attempt was not recorded");
+                var second = await CatalogSearchPageProcessor.ProcessAsync(scopes, page, false, new(), default, refreshThumbnails: true);
+                Check.That(second.Added == 0 && second.Failed == 0 && images.Calls == 1,
+                    "Immediate replay ignored thumbnail retry policy");
+            });
+        }
         foreach (var sample in new (string Name, string Fields, string Restrictions, bool? OffSale, long? Current, long? Original)[]
         {
             ("Emberwrath public listing", "\"price\":50000,\"lowestPrice\":50000,\"lowestResalePrice\":0,\"hasResellers\":false", "[]", false, 50000, null),
@@ -235,12 +261,12 @@ internal static class SearchDetailsTests
         BaseAddress = new("https://catalog.roblox.com/")
     };
     private static RobloxCatalogDiscoveryClient Client(HttpClient http) => new(http, Options.Create(new RobloxCatalogOptions()));
-    private static ServiceProvider Provider(Repository repo, FallbackCatalog catalog, bool allowImages = false, IRobloxCatalogDiscoveryClient? discovery = null, ICatalogPageWriter? writer = null)
+    private static ServiceProvider Provider(Repository repo, FallbackCatalog catalog, bool allowImages = false, IRobloxCatalogDiscoveryClient? discovery = null, ICatalogPageWriter? writer = null, IRobloxThumbnailClient? thumbnails = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton<IItemRepository>(repo);
         services.AddSingleton<IRobloxCatalogClient>(catalog);
-        services.AddSingleton<IRobloxThumbnailClient>(allowImages ? new PendingThumbnail() : new ForbiddenImages());
+        services.AddSingleton<IRobloxThumbnailClient>(thumbnails ?? (allowImages ? new PendingThumbnail() : new ForbiddenImages()));
         services.AddSingleton<ICatalogImportFailureStore>(new Failures());
         services.AddSingleton(new CatalogRefreshPolicy());
         services.AddLogging();
@@ -277,6 +303,17 @@ internal static class SearchDetailsTests
             throw new CatalogBatchWriteException(new Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException("conflict"));
         }
         public void Dispose() => Disposed = true;
+    }
+    private sealed class DiscoveryImages(string state) : IRobloxThumbnailClient
+    {
+        public int Calls;
+        public Task<string?> GetAssetThumbnailAsync(long id, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            if (state == "unavailable")
+                throw new HttpRequestException("Thumbnail service unavailable");
+            return Task.FromResult<string?>(state == "completed" ? "https://tr.rbxcdn.com/test.webp" : null);
+        }
     }
     private sealed class ForbiddenImages : IRobloxThumbnailClient
     {

@@ -8,7 +8,7 @@ public static class CatalogSearchPageProcessor
 {
     public static async Task<(int Added, int Failed)> ProcessAsync(IServiceScopeFactory scopes,
         RobloxCatalogDiscoveryPage page, bool onlyNew, CatalogWorkerOptions options, CancellationToken cancellationToken,
-        bool fetchFallback = true)
+        bool fetchFallback = true, bool refreshThumbnails = false)
     {
         var fallback = new List<CatalogItemKey>();
         var added = 0;
@@ -30,14 +30,14 @@ public static class CatalogSearchPageProcessor
             }
         }
         // HTTP batches and reused observations can together exceed one database page.
-        // Persist only the already fetched data, with an independent scope per chunk.
+        // Metadata-only callers use batch persistence; thumbnail-enabled discovery uses the importer below.
         foreach (var entries in complete.Chunk(120))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var chunk = entries.ToDictionary(x => x.Key, x => x.Value);
             using var batchScope = scopes.CreateScope();
             var writer = batchScope.ServiceProvider.GetService<ICatalogPageWriter>();
-            if (writer is not null)
+            if (writer is not null && !refreshThumbnails)
             {
                 try
                 {
@@ -65,7 +65,7 @@ public static class CatalogSearchPageProcessor
             var processor = scope.ServiceProvider.GetRequiredService<CatalogImportProcessor>();
             if (!await processor.CanProcessAsync(key, onlyNew, cancellationToken))
                 continue;
-            var outcome = await processor.ProcessResultAsync(key, result, onlyNew, cancellationToken, refreshThumbnail: false);
+            var outcome = await processor.ProcessResultAsync(key, result, onlyNew, cancellationToken, refreshThumbnail: refreshThumbnails);
             if (outcome.Added)
                 added++;
             if (outcome.Failed)

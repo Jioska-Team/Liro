@@ -86,7 +86,7 @@ public sealed class CatalogDiscoveryWorker(IServiceScopeFactory scopeFactory, IL
     }
     private async Task ImportPageAsync(Liro.Application.RobloxIntegration.Models.RobloxCatalogDiscoveryPage page, CatalogWorkerOptions options, CancellationToken stoppingToken)
     {
-        await CatalogSearchPageProcessor.ProcessAsync(scopeFactory, page, false, options, stoppingToken);
+        await CatalogSearchPageProcessor.ProcessAsync(scopeFactory, page, false, options, stoppingToken, refreshThumbnails: true);
     }
 }
 
