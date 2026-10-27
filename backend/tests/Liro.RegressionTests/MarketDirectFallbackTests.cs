@@ -24,10 +24,74 @@ internal static class MarketDirectFallbackTests
         {
             var options = new MarketOptions();
             Check.That(options.DirectFallbackEnabled && options.DirectRequestsPerMinute == 1, "Respaldo no habilitado");
-            options.DirectRequestsPerMinute = 3;
-            Check.That(!options.IsValid(), "Permite aumentar respaldo sin revisión");
+            options.DirectRequestsPerMinute = 12;
+            Check.That(options.IsValid(), "Validated twelve-slot share was rejected");
+            options.DirectRequestsPerMinute = 13;
+            Check.That(!options.IsValid(), "Market share exceeded twelve slots");
+            options.DirectRequestsPerMinute = 12;
+            options.MaximumCoverageAgeMinutes = 0;
+            Check.That(!options.IsValid(), "Zero coverage window accepted");
+            options.MaximumCoverageAgeMinutes = 1441;
+            Check.That(!options.IsValid(), "Unbounded coverage window accepted");
+        });
+        suite.Test("DirectFallback_ValidatesShareAgainstTheExistingGlobalBudget", () =>
+        {
+            var options = new RobloxRequestOptions { BudgetCapacity = 18 };
+            Check.That(MarketDirectBudget.IsValidCapacity(options, 12), "Twelve plus six rejected");
+            Check.That(!MarketDirectBudget.IsValidCapacity(options, 13), "Thirteenth direct slot accepted");
+            options.BudgetCapacity = 7;
+            Check.That(MarketDirectBudget.IsValidCapacity(options, 1), "Seven-slot baseline rejected");
+            Check.That(!MarketDirectBudget.IsValidCapacity(options, 2), "Catalog six-slot allowance was lost");
+            options.BudgetCapacity = 19;
+            Check.That(!MarketDirectBudget.IsValidCapacity(options, 12), "Global eighteen cap was increased");
+            options.BudgetCapacity = 18;
+            options.BudgetWindow = TimeSpan.FromSeconds(30);
+            Check.That(!MarketDirectBudget.IsValidCapacity(options, 12), "Budget window was shortened");
         });
         var connection = IntegrationPrerequisites.RequireConnection("LIRO_TEST_REDIS");
+        suite.AsyncTest("DirectFallback_TwelveMarketAndSixCatalogRequestsShareEighteenSlots", async () =>
+        {
+            using var redis = await ConnectionMultiplexer.ConnectAsync(connection);
+            var key = "liro:{test-twelve-" + Guid.NewGuid().ToString("N") + "}:budget";
+            var db = redis.GetDatabase();
+            await db.StringSetAsync(key + ":mode", "completion-v2");
+            var settings = new RobloxRequestOptions { BudgetKey = key, BudgetCapacity = 18, MinimumInterval = TimeSpan.FromSeconds(3) };
+            var normal = new RedisRobloxRequestBudget(redis, Options.Create(settings));
+            var direct = new MarketDirectBudget(redis, settings, 12);
+            try
+            {
+                for (var i = 0; i < 12; i++)
+                {
+                    // Advance only the isolated test pacing keys; retain all sixty-second counters.
+                    await db.KeyDeleteAsync(new RedisKey[] { key + ":next", key + ":market-direct-next" });
+                    Check.That(await direct.TryAcquireAsync("market" + i, default) == TimeSpan.Zero, "Expected market share was unavailable");
+                    await direct.CompleteAsync("market" + i, default);
+                    if (i == 0)
+                    {
+                        Check.That(await direct.TryAcquireAsync("too-soon", default) > TimeSpan.FromSeconds(4), "Five-second market cadence was bypassed");
+                        Check.That(await normal.TryAcquireAsync("catalog-too-soon", default) > TimeSpan.Zero, "Three-second global cadence was bypassed");
+                    }
+                }
+                await db.KeyDeleteAsync(new RedisKey[] { key + ":next", key + ":market-direct-next" });
+                Check.That(await direct.TryAcquireAsync("thirteenth", default) > TimeSpan.Zero, "Market used a thirteenth shared slot");
+                for (var i = 0; i < 6; i++)
+                {
+                    await db.KeyDeleteAsync(key + ":next");
+                    Check.That(await normal.TryAcquireAsync("catalog" + i, default) == TimeSpan.Zero, "Market consumed catalog allowance");
+                    await normal.CompleteAsync("catalog" + i, default);
+                }
+                Check.That(await db.SortedSetLengthAsync(key) == 18, "Global requests were counted in independent pools");
+                Check.That(await db.SortedSetLengthAsync(key + ":market-direct") == 12, "Market requests were lost from its share");
+                await db.KeyDeleteAsync(key + ":next");
+                Check.That(await normal.TryAcquireAsync("nineteenth", default) > TimeSpan.Zero, "Exceeded shared eighteen-slot limit");
+                await direct.PauseAsync(TimeSpan.FromSeconds(30), default);
+                Check.That(await normal.GetCooldownAsync(default) > TimeSpan.Zero, "Direct provider pause was not global");
+            }
+            finally
+            {
+                await db.KeyDeleteAsync(new RedisKey[] { key, key + ":next", key + ":pending", key + ":mode", key + ":leases", key + ":market-direct", key + ":market-direct-next", key + ":market-demand", key + ":cooldown" });
+            }
+        });
         suite.AsyncTest("DirectFallback_ReturnsToProxyWhenItsPauseExpires", async () =>
         {
             using var redis = await ConnectionMultiplexer.ConnectAsync(connection);

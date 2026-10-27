@@ -1,5 +1,19 @@
 using Liro.RegressionTests;
 
+if (args.Length == 1 && args[0] == "--owners-only")
+{
+    var targeted = new RegressionSuite();
+    OwnerTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
+if (args.Length == 1 && args[0] == "--resellers-only")
+{
+    var targeted = new RegressionSuite();
+    ResellerTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
 if (args.Length == 1 && args[0] == "--limited-conversions-only")
 {
     var targeted = new RegressionSuite();
@@ -55,6 +69,22 @@ if (args.Length == 1 && args[0] == "--http-contracts-only")
 if (!await IntegrationPrerequisites.CheckAsync()) return 2;
 if (args.Contains("--check-integration")) return 0;
 
+if (args.Length == 1 && args[0] == "--market-direct-budget-only")
+{
+    var targeted = new RegressionSuite();
+    MarketDirectFallbackTests.Register(targeted);
+    SharedCooldownTests.Register(targeted);
+    return await targeted.RunAsync();
+}
+
+if (args.Length == 1 && args[0] == "--market-dashboard-only")
+{
+    var targeted = new RegressionSuite();
+    MarketDashboardTests.Register(targeted);
+    MarketDataIntegrityTests.Register(targeted);
+    MarketTrackingTests.Register(targeted);
+    return await targeted.RunAsync();
+}
 if (args.Length == 1 && args[0] == "--market-integrity-only")
 {
     var targeted = new RegressionSuite();
@@ -73,6 +103,9 @@ if (args.Length == 1 && args[0] == "--catalog-queries-only")
 }
 
 var suite = new RegressionSuite();
+OwnerTests.Register(suite);
+ResellerTests.Register(suite);
+MarketDashboardTests.Register(suite);
 ItemPriceTests.Register(suite);
 ValkeyLossTests.Register(suite);
 if (args.Contains("--valkey-loss-only")) return await suite.RunAsync();

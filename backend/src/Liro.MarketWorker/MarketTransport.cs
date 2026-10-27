@@ -149,7 +149,8 @@ public sealed class MarketTransport(IConfiguration configuration, IConnectionMul
         var requestSettings = new RobloxRequestOptions();
         configuration.GetSection("Roblox:Requests").Bind(requestSettings);
         // Fail closed on an unsupported budget configuration instead of silently creating another pool.
-        if (requestSettings.BudgetCapacity is < 7 or > 18 || requestSettings.BudgetWindow != TimeSpan.FromMinutes(1))
+        if (!MarketDirectBudget.IsValidCapacity(requestSettings, settings.Value.DirectRequestsPerMinute)
+            || requestSettings.MinimumInterval < TimeSpan.FromSeconds(3))
             throw new MarketHttpException("PresupuestoDirectoInvalido", TimeSpan.FromMinutes(1), true);
         var directKey = requestSettings.BudgetKey + ":" + requestSettings.BudgetCapacity + ":"
             + requestSettings.MinimumInterval.Ticks + ":" + settings.Value.DirectRequestsPerMinute;

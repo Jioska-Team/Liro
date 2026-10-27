@@ -344,6 +344,23 @@ namespace Liro.Infrastructure.Persistence.Migrations
                     b.ToTable("CatalogoGeneral", (string)null);
                 });
 
+            modelBuilder.Entity("Liro.Infrastructure.Market.MarketDashboardSnapshot", b =>
+                {
+                    b.Property<DateTime>("BucketUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LimitedsCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("BucketUtc");
+
+                    b.ToTable("MarketDashboardSnapshots", (string)null);
+                });
+
             modelBuilder.Entity("Liro.Infrastructure.Market.MarketHistoryPoint", b =>
                 {
                     b.Property<Guid>("ItemId")
@@ -368,6 +385,10 @@ namespace Liro.Infrastructure.Persistence.Migrations
                         .HasColumnType("numeric(28,6)");
 
                     b.HasKey("ItemId", "Source", "Metric", "PeriodUtc");
+
+                    b.HasIndex("PeriodUtc", "Source", "Metric");
+
+                    NpgsqlIndexBuilderExtensions.IncludeProperties(b.HasIndex("PeriodUtc", "Source", "Metric"), new[] { "ItemId", "Value", "ObservedAtUtc" });
 
                     b.ToTable("MarketHistoryPoints", (string)null);
                 });

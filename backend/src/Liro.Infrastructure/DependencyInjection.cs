@@ -35,6 +35,18 @@ public static class DependencyInjection
                 })));
         });
         builder.Services.AddSingleton<RobloxCatalogSession>();
+        builder.Services.AddSingleton<RobloxResellerCache>();
+        builder.Services.AddSingleton<RobloxOwnerCache>();
+        builder.Services.AddScoped<ItemOwnerService>();
+        builder.Services.AddHttpClient<IRobloxOwnerClient, RobloxOwnerClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://inventory.roblox.com/");
+        }).WithRobloxTrafficControl();
+        builder.Services.AddScoped<ItemResellerService>();
+        builder.Services.AddHttpClient<IRobloxResellerClient, RobloxResellerClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://apis.roblox.com/");
+        }).WithRobloxTrafficControl();
         builder.Services.AddTransient<RobloxThrottleHandler>();
         builder.Services.AddOptions<RobloxRequestOptions>().BindConfiguration("Roblox:Requests").Validate(x => x.MinimumInterval > TimeSpan.Zero && x.DefaultCooldown > TimeSpan.Zero && x.MaximumFallbackCooldown >= x.DefaultCooldown
             && x.BudgetCapacity is >= 1 and <= 18 && x.BudgetWindow >= TimeSpan.FromMinutes(1) && x.BudgetWindow <= TimeSpan.FromHours(1)
@@ -46,6 +58,8 @@ public static class DependencyInjection
         builder.Services.AddScoped<IItemMarketHistoryRepository, ItemMarketHistoryRepository>();
         builder.Services.AddScoped<IItemMarketSeriesRepository, ItemMarketSeriesRepository>();
         builder.Services.AddScoped<IItemMarketSummaryRepository, ItemMarketSummaryRepository>();
+        builder.Services.AddScoped<IMarketDashboardRepository, MarketDashboardRepository>();
+        builder.Services.AddOptions<MarketDashboardOptions>().BindConfiguration("MarketDashboard").Validate(x => x.IsValid(), "Invalid dashboard settings.").ValidateOnStart();
         builder.Services.AddHostedService<DatabaseInitializationService>();
         builder.AddNpgsqlDbContext<LiroDbContext>("lirodb");
         builder.AddRedisClient("valkey");
@@ -75,8 +89,3 @@ public static class DependencyInjection
         return builder;
     }
 }
-
-
-
-
-

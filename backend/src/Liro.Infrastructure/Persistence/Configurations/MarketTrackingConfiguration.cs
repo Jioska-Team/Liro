@@ -41,6 +41,7 @@ public sealed class MarketHistoryConfiguration : IEntityTypeConfiguration<Market
     {
         b.ToTable("MarketHistoryPoints");
         b.HasKey(x => new { x.ItemId, x.Source, x.Metric, x.PeriodUtc });
+        b.HasIndex(x => new { x.PeriodUtc, x.Source, x.Metric }).IncludeProperties(x => new { x.ItemId, x.Value, x.ObservedAtUtc });
         b.HasOne<Item>().WithMany().HasForeignKey(x => x.ItemId).OnDelete(DeleteBehavior.Cascade);
         b.Property(x => x.Source).HasMaxLength(40);
         b.Property(x => x.Metric).HasMaxLength(30);

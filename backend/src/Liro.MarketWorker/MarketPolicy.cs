@@ -11,6 +11,7 @@ public sealed class MarketOptions
     }
     public bool DirectFallbackEnabled { get; set; } = true;
     public int DirectRequestsPerMinute { get; set; } = 1;
+    public int MaximumCoverageAgeMinutes { get; set; } = 180;
     public int RequestsPerMinute { get; set; } = 18;
     public int MaxConcurrentRequests { get; set; } = 5;
     public int VeryActiveMinutes { get; set; } = 2;
@@ -30,7 +31,8 @@ public sealed class MarketOptions
         "Inactiva" or "SinVentasRecientes" => InactiveMinutes,
         _ => LowMinutes
     });
-    public bool IsValid() => DirectRequestsPerMinute is >= 1 and <= 2
+    public bool IsValid() => DirectRequestsPerMinute is >= 1 and <= 12
+        && MaximumCoverageAgeMinutes is >= 1 and <= 1440
         && RequestsPerMinute is >= 1 and <= 60 && MaxConcurrentRequests is >= 1 and <= 10 && VeryActiveMinutes >= 2
         && ActiveMinutes >= VeryActiveMinutes && NormalMinutes >= ActiveMinutes
         && LowMinutes >= NormalMinutes && InactiveMinutes >= LowMinutes && InactiveMinutes <= 1440 && UncertainMinutes >= 1 && MissingHistoryMinutes >= 1;

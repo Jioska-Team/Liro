@@ -1,3 +1,5 @@
+using Liro.Application.Catalog.Services;
+using Liro.Infrastructure.Persistence.Repositories;
 using Liro.Infrastructure.Persistence;
 using Liro.MarketWorker;
 
@@ -7,6 +9,8 @@ builder.AddServiceDefaults();
 builder.AddNpgsqlDbContext<LiroDbContext>("lirodb", settings => settings.DisableRetry = true);
 builder.AddRedisClient("valkey");
 builder.Services.AddOptions<MarketOptions>().BindConfiguration("Market").Validate(x => x.IsValid(), "Configuración de mercado inválida.").ValidateOnStart();
+builder.Services.AddOptions<MarketDashboardOptions>().BindConfiguration("MarketDashboard").Validate(x => x.IsValid(), "Invalid dashboard settings.").ValidateOnStart();
+builder.Services.AddScoped<IMarketDashboardRepository, MarketDashboardRepository>();
 builder.Services.AddSingleton<MarketTransport>();
 builder.Services.AddHostedService<MarketWorkerService>();
 using var host = builder.Build();

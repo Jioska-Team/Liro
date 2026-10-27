@@ -1,3 +1,4 @@
+using Liro.Application.Catalog.Services;
 using Liro.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,7 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
         var pool = new MarketLanePool(settings.Value.MaxConcurrentRequests);
         using var writes = new SemaphoreSlim(1, 1);
         var nextSeed = DateTime.MinValue;
+        var nextDashboard = DateTime.MinValue;
         var nextConnections = DateTime.MinValue;
         var nextClassification = DateTime.MinValue;
         var connections = new List<(string Key, MarketProxy Proxy)>();
@@ -43,6 +45,18 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                         continue;
                     }
                     schemaReady = true;
+                    if (DateTime.UtcNow >= nextDashboard)
+                    {
+                        // Independent scope/transaction: a statistics failure must not block collection.
+                        try
+                        {
+                            using var statsScope = scopes.CreateScope();
+                            await statsScope.ServiceProvider.GetRequiredService<IMarketDashboardRepository>().CaptureAsync(DateTime.UtcNow, ct);
+                        }
+                        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                        catch (Exception ex) { logger.LogWarning(ex, "Market dashboard snapshot failed; collection continues."); }
+                        nextDashboard = DateTime.UtcNow.AddMinutes(1);
+                    }
                     var store = new MarketStore(db);
                     if (DateTime.UtcNow >= nextClassification)
                     {
@@ -51,6 +65,18 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                         nextClassification = DateTime.UtcNow.AddMinutes(5);
                         nextConnections = DateTime.MinValue;
                     }
+                    if (DateTime.UtcNow >= nextSeed)
+                    {
+                        await writes.WaitAsync(ct);
+                        try
+                        {
+                            logger.LogInformation("Seguimientos de mercado incorporados: {Count}.", await store.SeedAsync(ct));
+                        }
+                        finally { writes.Release(); }
+                        nextSeed = DateTime.UtcNow.AddMinutes(5);
+                        nextConnections = DateTime.MinValue;
+                    }
+                    var refreshedPlans = false;
                     if (DateTime.UtcNow >= nextConnections)
                     {
                         var updated = new List<(string Key, MarketProxy Proxy)>();
@@ -71,31 +97,22 @@ public sealed class MarketWorkerService(IServiceScopeFactory scopes, IOptions<Ma
                         if (updated.Count > 32)
                             throw new InvalidOperationException("Demasiadas conexiones.");
                         connections = updated;
-                        schedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct),
-                            connections.Sum(x => x.Proxy.RequestsPerMinute));
-                        logger.LogInformation("Frecuencias de mercado: muy alta {Very} min; alta {High} min; media {Normal} min; baja {Low} min; sin ventas recientes o inactiva {Inactive} min; incierta reciente {Uncertain} min; sin historial {Missing} min; una selección de cada cuatro reservada al resto.",
-                            schedule.VeryActiveMinutes, schedule.ActiveMinutes, schedule.NormalMinutes, schedule.LowMinutes, schedule.InactiveMinutes, schedule.UncertainMinutes, schedule.MissingHistoryMinutes);
+                        (schedule, directSchedule) = MarketSchedulePlan.BuildRoutes(settings.Value,
+                            await store.PopulationAsync(ct), connections.Sum(x => x.Proxy.RequestsPerMinute));
+                        refreshedPlans = true;
                         nextConnections = DateTime.UtcNow.AddMinutes(1);
                         logger.LogInformation("Conexiones válidas de mercado: {Count}.", connections.Count);
                     }
-                    if (DateTime.UtcNow >= nextSeed)
-                    {
-                        await writes.WaitAsync(ct);
-                        try
-                        {
-                            logger.LogInformation("Seguimientos de mercado incorporados: {Count}.", await store.SeedAsync(ct));
-                        }
-                        finally { writes.Release(); }
-                        nextSeed = DateTime.UtcNow.AddMinutes(5);
-                    }
                     var proxies = connections.Select(x => x.Proxy).ToArray();
                     var useDirect = await transport.ShouldUseDirectAsync(proxies);
-                    if (previousDirect != useDirect)
+                    if (refreshedPlans || previousDirect != useDirect)
                     {
                         logger.LogInformation("Ruta de mercado: {Mode}; respaldo máximo {Budget}/min, subordinado al cupo del catálogo.",
                             useDirect ? "DIRECTA_RESPALDO" : "PROXIES", settings.Value.DirectRequestsPerMinute);
-                        if (useDirect)
-                            directSchedule = MarketSchedulePlan.Build(settings.Value, await store.PopulationAsync(ct), settings.Value.DirectRequestsPerMinute);
+                        var effective = useDirect ? directSchedule : schedule;
+                        logger.LogInformation("Frecuencias de ruta efectiva: muy alta {Very} min; alta {High} min; media {Normal} min; baja {Low} min; inactiva {Inactive} min; incierta {Uncertain} min; sin historial {Missing} min. Cobertura pendiente a partir de {Coverage} min tiene prioridad; presupuesto y esperas se conservan.",
+                            effective.VeryActiveMinutes, effective.ActiveMinutes, effective.NormalMinutes, effective.LowMinutes,
+                            effective.InactiveMinutes, effective.UncertainMinutes, effective.MissingHistoryMinutes, effective.MaximumCoverageAgeMinutes);
                         previousDirect = useDirect;
                     }
                     if (useDirect)

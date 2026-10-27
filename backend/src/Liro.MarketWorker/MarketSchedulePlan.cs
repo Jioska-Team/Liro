@@ -11,6 +11,9 @@ public sealed class MarketPopulation
 
 public static class MarketSchedulePlan
 {
+    public static (MarketOptions Proxies, MarketOptions Direct) BuildRoutes(MarketOptions baseline,
+        IReadOnlyList<MarketPopulation> population, int proxyCapacity) =>
+        (Build(baseline, population, proxyCapacity), Build(baseline, population, baseline.DirectRequestsPerMinute));
     // Leave 10% for latency/retries and one in four selections for background coverage.
     public static MarketOptions Build(MarketOptions baseline, IReadOnlyList<MarketPopulation> population, int routeCapacity)
     {
@@ -29,6 +32,7 @@ public static class MarketSchedulePlan
         return new MarketOptions
         {
             Enabled = baseline.Enabled,
+            MaximumCoverageAgeMinutes = baseline.MaximumCoverageAgeMinutes,
             RequestsPerMinute = baseline.RequestsPerMinute,
             DirectFallbackEnabled = baseline.DirectFallbackEnabled,
             DirectRequestsPerMinute = baseline.DirectRequestsPerMinute,

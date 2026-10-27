@@ -13,8 +13,8 @@ internal static class MarketPriorityTests
         {
             await using var db = await Open(connection);
             var hot = await Add(db, "MuyAlta", 16);
-            var high = await Add(db, "Alta", 2000);
-            var cold = await Add(db, "SinHistorial", 10000);
+            var high = await Add(db, "Alta", 60);
+            var cold = await Add(db, "SinHistorial", 90);
             var store = new MarketStore(db);
             var plan = Plan();
             Check.That((await store.ClaimAsync(default, false, plan))?.ItemId == hot, "High backlog displaced due very-active item");
@@ -27,7 +27,7 @@ internal static class MarketPriorityTests
             await using var db = await Open(connection);
             await using var transaction = await db.Database.BeginTransactionAsync();
             var hot = await Add(db, "MuyAlta", 14);
-            var high = await Add(db, "Alta", 2000);
+            var high = await Add(db, "Alta", 60);
             var store = new MarketStore(db);
             Check.That((await store.ClaimAsync(default, false, Plan()))?.ItemId == high, "Very-active item queried before its interval");
             await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -48,15 +48,17 @@ internal static class MarketPriorityTests
             for (var i = 0; i < 5; i++)
                 hot.Add(await Add(db, "MuyAlta", 30 + i));
             for (var i = 0; i < 72; i++)
-                await Add(db, "Alta", 2000 + i);
+                await Add(db, "Alta", 31);
             var background = new HashSet<Guid>();
             for (var i = 0; i < 57; i++)
-                background.Add(await Add(db, "SinHistorial", 10000 + i));
+                background.Add(await Add(db, "SinHistorial", 31));
             var store = new MarketStore(db);
             var last = new Dictionary<Guid, int>();
             var repeats = new Dictionary<Guid, int>();
             var highCount = 0;
             var backgroundCount = 0;
+            // This scenario isolates activity cadence: all observations stay under the 180-minute
+            // coverage deadline. Overdue coverage priority is exercised by MarketCoverage tests.
             // Simulated 65-second budget turns, no HTTP requests or real waiting.
             for (var slot = 0; slot < 120; slot++)
             {
@@ -89,7 +91,7 @@ internal static class MarketPriorityTests
         });
     }
 
-    private static MarketOptions Plan() => new() { VeryActiveMinutes = 15, ActiveMinutes = 211, MissingHistoryMinutes = 3000 };
+    private static MarketOptions Plan() => new() { VeryActiveMinutes = 15, ActiveMinutes = 30, MissingHistoryMinutes = 30 };
 
     private static async Task<LiroDbContext> Open(string connection)
     {

@@ -9,6 +9,20 @@ public interface IItemMarketSummaryRepository
 
 public sealed record ItemMarketSummary
 {
+    public int? AssetTypeId { get; init; }
+    public long? TotalQuantity { get; init; }
+    public long? UnitsAvailableForConsumption { get; init; }
+    public long? FavoriteCount { get; init; }
+    public int DailySalesWindowDays { get; init; }
+    public DateTime DailySalesPeriodStartUtc { get; init; }
+    public DateTime DailySalesPeriodEndUtc { get; init; }
+    public DateTime? DailySalesObservedAtUtc { get; init; }
+    public decimal? RapChange1hPercent { get; init; }
+    public decimal? RapChange24hPercent { get; init; }
+    public decimal? RapChange7dPercent { get; init; }
+    public decimal? RapChange30dPercent { get; init; }
+    public double? RapAgeSeconds { get; init; }
+    public string? RapSource { get; init; }
     public Guid ItemId
     {
         get; init;

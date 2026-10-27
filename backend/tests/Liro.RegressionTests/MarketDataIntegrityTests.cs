@@ -15,6 +15,28 @@ internal static class MarketDataIntegrityTests
 
     public static void Register(RegressionSuite suite)
     {
+        foreach (var (minutes, value, expectedCount) in new[] { (59, 123m, 1), (60, 123m, 2), (61, 123m, 2), (15, 124m, 2) })
+            suite.AsyncTest("MarketIntegrity_RapHeartbeat_" + minutes + "_" + value, async () =>
+            {
+                await using var db = await Open();
+                var claim = await Seed(db, Day.AddHours(9));
+                var observation = new ResaleObservation(value, [], Day.AddHours(9).AddMinutes(minutes));
+                Check.That(await new MarketStore(db).SaveAsync(claim, observation, new(), default), "RAP observation rejected");
+                Check.That(await db.Set<MarketRapSnapshot>().CountAsync() == expectedCount,
+                    "Unchanged RAP must retain hourly evidence, without a snapshot on every poll");
+                Check.That((await Watch(db)).RapObservedAtUtc == observation.ObservedAtUtc, "Watch freshness did not advance");
+            });
+        suite.AsyncTest("MarketIntegrity_RapHeartbeatRepairsMissingHistory", async () =>
+        {
+            await using var db = await Open();
+            var claim = await Seed(db, Day.AddHours(9));
+            await db.Database.ExecuteSqlRawAsync("""DELETE FROM "MarketRapSnapshots" """);
+            var observation = new ResaleObservation(123, [], Day.AddHours(9).AddMinutes(1));
+            Check.That(await new MarketStore(db).SaveAsync(claim, observation, new(), default), "Observation rejected");
+            var snapshot = await db.Set<MarketRapSnapshot>().SingleAsync();
+            Check.That(snapshot.ObservedAtUtc == observation.ObservedAtUtc && snapshot.Value == 123,
+                "Missing RAP history must begin at the real new observation");
+        });
         suite.AsyncTest("MarketIntegrity_OldReclassificationPreservesNewerWindow", async () =>
         {
             await using var db = await Open();

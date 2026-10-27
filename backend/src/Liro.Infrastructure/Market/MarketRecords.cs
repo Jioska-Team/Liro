@@ -137,3 +137,10 @@ public sealed class MarketRapSnapshot
         get; set;
     }
 }
+
+public sealed class MarketDashboardSnapshot
+{
+    public DateTime BucketUtc { get; set; }
+    public int LimitedsCount { get; set; }
+    public string Payload { get; set; } = "";
+}

@@ -103,8 +103,8 @@ public sealed class MarketStore(LiroDbContext db)
     {
         var lease = Guid.NewGuid();
         var plan = schedule ?? new MarketOptions();
-        // Keep the reserved background turn first, then prefer due very-active items over
-        // the older high-activity backlog. Eligibility, cooldowns and leases still apply.
+        // Refresh never-observed and oldest stale items before activity scheduling.
+        // Coverage never bypasses provider retry windows or active leases.
         var rows = await db.Database.SqlQuery<MarketClaim>($"""
             WITH candidate AS (
                 SELECT w."ItemId" FROM "MarketWatches" w JOIN "Items" i ON i."Id" = w."ItemId"
@@ -119,10 +119,17 @@ public sealed class MarketStore(LiroDbContext db)
                         WHEN 'SinHistorial' THEN {plan.MissingHistoryMinutes} WHEN 'SinDatos' THEN {plan.MissingHistoryMinutes}
                         ELSE {plan.LowMinutes} END
                     ELSE w."NextCheckAtUtc" END AS due) q
-                WHERE q.due <= NOW() AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc" <= NOW())
+                CROSS JOIN LATERAL (SELECT w."LastSuccessAtUtc" IS NULL OR
+                    w."LastSuccessAtUtc" <= NOW() - INTERVAL '1 minute' * {plan.MaximumCoverageAgeMinutes} AS urgent) coverage
+                WHERE (q.due <= NOW() OR coverage.urgent)
+                  AND (w."LastErrorCode" IS NULL OR w."LastErrorCode" LIKE 'Cupo%' OR w."NextCheckAtUtc" <= NOW())
+                  AND (w."LeaseUntilUtc" IS NULL OR w."LeaseUntilUtc" <= NOW())
                   AND i."CreatorId" = 1 AND i."CreatorType" = 'User'
                   AND i."MarketStatus" IN ('Limited', 'LimitedUnique') AND i."CollectibleItemId" IS NOT NULL
-                ORDER BY CASE WHEN (w."Activity" IN ('MuyAlta','Alta')) = {!preferBackground} THEN 0 ELSE 1 END,
+                ORDER BY coverage.urgent DESC,
+                    CASE WHEN coverage.urgent THEN w."LastSuccessAtUtc" END ASC NULLS FIRST,
+                    CASE WHEN coverage.urgent THEN w."ItemId" END,
+                    CASE WHEN (w."Activity" IN ('MuyAlta','Alta')) = {!preferBackground} THEN 0 ELSE 1 END,
                     CASE WHEN w."Activity"='MuyAlta' THEN 0 ELSE 1 END,
                     q.due, w."ItemId" FOR UPDATE OF w SKIP LOCKED LIMIT 1
             ), claimed AS (
@@ -164,7 +171,11 @@ public sealed class MarketStore(LiroDbContext db)
         }
         if (observation.Rap is { } rap)
         {
-            if (watch.RecentAveragePrice != rap)
+            // Record evidence of stable RAP at most hourly as well as price changes.
+            // This enables historical freshness checks without inventing past observations.
+            var lastSnapshot = await db.Set<MarketRapSnapshot>().Where(x => x.ItemId == claim.ItemId)
+                .MaxAsync(x => (DateTime?)x.ObservedAtUtc, ct);
+            if (watch.RecentAveragePrice != rap || lastSnapshot is null || observation.ObservedAtUtc - lastSnapshot >= TimeSpan.FromHours(1))
                 db.Set<MarketRapSnapshot>().Add(new()
                 {
                     ItemId = claim.ItemId,

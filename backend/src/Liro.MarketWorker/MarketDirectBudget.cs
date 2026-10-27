@@ -8,7 +8,18 @@ namespace Liro.MarketWorker;
 // All direct callers share the global counter; a short demand lease reserves one available turn.
 public sealed class MarketDirectBudget(IConnectionMultiplexer redis, RobloxRequestOptions settings, int capacity) : IRobloxRequestBudget
 {
-    private readonly RedisRobloxRequestBudget shared = new(redis, Options.Create(settings), capacity);
+    private readonly RedisRobloxRequestBudget shared = CreateShared(redis, settings, capacity);
+    // A direct market share may use at most twelve of the existing eighteen slots,
+    // and must leave at least six available to catalog/detail clients.
+    public static bool IsValidCapacity(RobloxRequestOptions options, int marketCapacity) =>
+        options.BudgetCapacity is >= 7 and <= 18 && options.BudgetWindow == TimeSpan.FromMinutes(1)
+        && marketCapacity is >= 1 and <= 12 && marketCapacity <= options.BudgetCapacity - 6;
+
+    private static RedisRobloxRequestBudget CreateShared(IConnectionMultiplexer connection, RobloxRequestOptions options, int marketCapacity)
+    {
+        if (!IsValidCapacity(options, marketCapacity)) throw new ArgumentException("Market direct capacity must preserve six shared slots.");
+        return new(connection, Options.Create(options), marketCapacity);
+    }
     private const string Reserve = """
         local t = redis.call('TIME')
         local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)

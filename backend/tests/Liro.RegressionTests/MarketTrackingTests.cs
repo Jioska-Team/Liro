@@ -77,6 +77,22 @@ internal static class MarketTrackingTests
             Check.That(catalog.GetIndexes().Any(x => x.IsUnique && x.Properties.Select(p => p.Name).SequenceEqual(new[] { "Tipo", "Clave" })), "Falta unicidad de configuración");
             Check.That(db.Model.FindEntityType(typeof(MarketHistoryPoint))!.FindPrimaryKey()!.Properties.Count == 4, "No deduplica serie por origen, indicador y fecha");
         });
+        suite.Test("MarketSchedule_RefreshesBothRoutesWithCurrentPopulation", () =>
+        {
+            var options = new MarketOptions { RequestsPerMinute = 30, DirectRequestsPerMinute = 1, MaximumCoverageAgeMinutes = 90 };
+            var first = MarketSchedulePlan.BuildRoutes(options,
+                [new() { Activity = "Alta", Count = 10 }, new() { Activity = "SinVentasRecientes", Count = 100 }], 30);
+            var second = MarketSchedulePlan.BuildRoutes(options,
+                [new() { Activity = "Alta", Count = 100 }, new() { Activity = "SinVentasRecientes", Count = 1000 }], 30);
+            Check.That(second.Direct.ActiveMinutes > first.Direct.ActiveMinutes
+                && second.Direct.InactiveMinutes > first.Direct.InactiveMinutes,
+                "Direct route retained a startup population plan");
+            Check.That(second.Proxies.ActiveMinutes > first.Proxies.ActiveMinutes
+                && second.Direct.ActiveMinutes > second.Proxies.ActiveMinutes,
+                "Both routes must use current population and their own actual capacity");
+            Check.That(second.Direct.MaximumCoverageAgeMinutes == 90 && second.Proxies.MaximumCoverageAgeMinutes == 90,
+                "Adaptive frequencies lost the explicit coverage age policy");
+        });
         suite.Test("Frecuencias adaptadas reservan capacidad para todos los grupos", () =>
         {
             var population = new List<MarketPopulation> { new() { Activity="MuyAlta", Count=9 }, new() { Activity="Alta", Count=81 },
@@ -134,6 +150,58 @@ internal static class MarketTrackingTests
     private static void RegisterDatabase(RegressionSuite suite)
     {
         var connection = IntegrationPrerequisites.RequireConnection("LIRO_TEST_POSTGRES");
+        foreach (var scenario in new[] { "OldQuiet", "NewFirst", "Retry", "BudgetWait", "Lease", "ForeignCreator", "ExpiredRetry" })
+            suite.AsyncTest("MarketCoverage_" + scenario, async () =>
+            {
+                await using var db = new LiroDbContext(new DbContextOptionsBuilder<LiroDbContext>().UseNpgsql(connection).Options);
+                await db.Database.OpenConnectionAsync();
+                await db.Database.ExecuteSqlRawAsync("""
+                    CREATE TEMP TABLE "Items" ("Id" uuid PRIMARY KEY,"CreatorId" bigint,"CreatorType" text,"MarketStatus" text,"CollectibleItemId" uuid);
+                    CREATE TEMP TABLE "MarketWatches" ("ItemId" uuid PRIMARY KEY,"NextCheckAtUtc" timestamptz,"LastAttemptAtUtc" timestamptz,
+                        "LastSuccessAtUtc" timestamptz,"LeaseId" uuid,"LeaseUntilUtc" timestamptz,"LastErrorCode" text,"Activity" text);
+                    """);
+                var hot = Guid.NewGuid();
+                var cold = Guid.NewGuid();
+                var collectible = Guid.NewGuid();
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    INSERT INTO "Items" VALUES ({hot},1,'User','Limited',{Guid.NewGuid()}),({cold},1,'User','LimitedUnique',{collectible});
+                    INSERT INTO "MarketWatches" ("ItemId","NextCheckAtUtc","LastSuccessAtUtc","Activity")
+                    VALUES ({hot},NOW()-INTERVAL '1 minute',NOW()-INTERVAL '5 minutes','MuyAlta'),
+                           ({cold},NOW()+INTERVAL '20 days',NOW()-INTERVAL '2 days','SinVentasRecientes');
+                    """);
+                if (scenario == "NewFirst")
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "LastSuccessAtUtc"=NULL WHERE "ItemId"={cold}""");
+                if (scenario is "Retry" or "ExpiredRetry")
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE "MarketWatches" SET "LastErrorCode"='HTTP429',
+                            "NextCheckAtUtc"=NOW()+{(scenario == "Retry" ? TimeSpan.FromMinutes(10) : TimeSpan.FromMinutes(-10))}
+                        WHERE "ItemId"={cold}
+                        """);
+                if (scenario is "BudgetWait" or "Lease")
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""
+                        UPDATE "MarketWatches" SET "LeaseUntilUtc"=NOW()+INTERVAL '1 minute',
+                            "LeaseId"={(scenario == "Lease" ? (Guid?)Guid.NewGuid() : null)},
+                            "LastErrorCode"={(scenario == "BudgetWait" ? "CupoMercado" : (string?)null)} WHERE "ItemId"={cold}
+                        """);
+                if (scenario == "ForeignCreator")
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "Items" SET "CreatorId"=2 WHERE "Id"={cold}""");
+                if (scenario is "OldQuiet" or "NewFirst")
+                {
+                    var otherOld = Guid.NewGuid();
+                    await db.Database.ExecuteSqlInterpolatedAsync($"""
+                        INSERT INTO "Items" VALUES ({otherOld},1,'User','Limited',{Guid.NewGuid()});
+                        INSERT INTO "MarketWatches" ("ItemId","NextCheckAtUtc","LastSuccessAtUtc","Activity")
+                        VALUES ({otherOld},NOW()-INTERVAL '30 days',NOW()-INTERVAL '1 day','MuyAlta')
+                        """);
+                }
+                var plan = new MarketOptions { InactiveMinutes = 30000 };
+                var claim = await new MarketStore(db).ClaimAsync(default, false, plan);
+                var expectsCold = scenario is "OldQuiet" or "NewFirst" or "ExpiredRetry";
+                Check.That(claim?.ItemId == (expectsCold ? cold : hot),
+                    "Coverage priority either starved an old item or bypassed retry/lease/official eligibility");
+                if (expectsCold)
+                    Check.That(claim!.CollectibleItemId == collectible && claim.LeaseId != Guid.Empty, "Claim identity or reservation corrupted");
+            });
         suite.AsyncTest("Mercado reserva sin duplicar y guarda historial idempotente en PostgreSQL", async () =>
         {
             var probe = new PersistenceOptimizationTests.CommandProbe();
@@ -190,7 +258,7 @@ internal static class MarketTrackingTests
             await db.Database.ExecuteSqlInterpolatedAsync($"""INSERT INTO "Items" VALUES ({hot},1,'User','Limited',{Guid.NewGuid()}),({cold},1,'User','Limited',{Guid.NewGuid()})""");
             await store.SeedAsync(default);
             await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "Activity"='MuyAlta', "LastSuccessAtUtc"=NOW()-INTERVAL '3 minutes', "NextCheckAtUtc"=NOW()+INTERVAL '1 hour' WHERE "ItemId"={hot}""");
-            await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "NextCheckAtUtc"=NOW()-INTERVAL '1 day' WHERE "ItemId"={cold}""");
+            await db.Database.ExecuteSqlInterpolatedAsync($"""UPDATE "MarketWatches" SET "LastSuccessAtUtc"=NOW()-INTERVAL '20 minutes', "NextCheckAtUtc"=NOW()-INTERVAL '1 day' WHERE "ItemId"={cold}""");
             var prioritized = (await store.ClaimAsync(default, false, new()))!;
             Check.That(prioritized.ItemId == hot, "El atraso general desplaza al activo o ignora la frecuencia efectiva");
             await store.ReleaseAsync(prioritized, "CupoConexion", TimeSpan.Zero, false, default);
